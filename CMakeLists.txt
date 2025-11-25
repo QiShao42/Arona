@@ -17,6 +17,7 @@ set(PROJECT_SOURCES
         arona.cpp
         arona.h
         arona.ui
+        resources.qrc
 )
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
