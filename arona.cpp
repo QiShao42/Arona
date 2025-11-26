@@ -10,6 +10,9 @@
 #include <QSize>
 #include <QSizePolicy>
 #include <QPainter>
+#include <QScreen>
+#include <QDateTime>
+#include <QDir>
 #include <windows.h>
 
 arona::arona(QWidget *parent)
@@ -27,8 +30,17 @@ arona::arona(QWidget *parent)
     connect(captureHandleButton, &QPushButton::pressed, this, &arona::onCaptureHandleButtonPressed);
     connect(selectBgButton, &QPushButton::clicked, this, &arona::onSelectBgButtonClicked);
     
+#if DEBUG_MODE
+    connect(debugButton, &QPushButton::clicked, this, &arona::onDebugButtonClicked);
+    connect(debugTypeComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), 
+            this, &arona::onDebugTypeChanged);
+#endif
+    
     // 初始化日志系统
     appendLog("欢迎使用Arona!");
+#if DEBUG_MODE
+    appendLog("调试模式已启用", "WARNING");
+#endif
 }
 
 arona::~arona()
@@ -172,6 +184,115 @@ void arona::setupUi()
     selectBgButton->setText("选择背景图");
     verticalLayout_3->addWidget(selectBgButton);
     
+#if DEBUG_MODE
+    // ==================== 调试功能区 ====================
+    debugGroupBox = new QGroupBox("调试功能", area3);
+    debugGroupBox->setStyleSheet("QGroupBox { "
+                                 "border: 2px solid #66CCFF; "
+                                 "border-radius: 5px; "
+                                 "margin-top: 10px; "
+                                 "padding-top: 10px; "
+                                 "font-weight: bold; "
+                                 "color: #66CCFF; "
+                                 "} "
+                                 "QGroupBox::title { "
+                                 "subcontrol-origin: margin; "
+                                 "subcontrol-position: top center; "
+                                 "padding: 0 5px; "
+                                 "background-color: white; "
+                                 "}");
+    
+    QVBoxLayout *debugLayout = new QVBoxLayout(debugGroupBox);
+    debugLayout->setSpacing(8);
+    debugLayout->setContentsMargins(8, 15, 8, 8);
+    
+    // 调试类型选择
+    debugTypeComboBox = new QComboBox(debugGroupBox);
+    debugTypeComboBox->addItem("截图调试");
+    debugTypeComboBox->addItem("点击调试");
+    debugTypeComboBox->setStyleSheet("QComboBox { "
+                                    "border: 2px solid #66CCFF; "
+                                    "border-radius: 3px; "
+                                    "padding: 3px; "
+                                    "background-color: white; "
+                                    "font-weight: normal; "
+                                    "} "
+                                    "QComboBox::drop-down { "
+                                    "border: none; "
+                                    "} "
+                                    "QComboBox::down-arrow { "
+                                    "image: none; "
+                                    "border-left: 4px solid transparent; "
+                                    "border-right: 4px solid transparent; "
+                                    "border-top: 5px solid #66CCFF; "
+                                    "width: 0; "
+                                    "height: 0; "
+                                    "}");
+    debugLayout->addWidget(debugTypeComboBox);
+    
+    // 点击调试参数容器
+    clickDebugWidget = new QWidget(debugGroupBox);
+    clickDebugLayout = new QHBoxLayout(clickDebugWidget);
+    clickDebugLayout->setSpacing(5);
+    clickDebugLayout->setContentsMargins(0, 0, 0, 0);
+    
+    xLabel = new QLabel("X:", clickDebugWidget);
+    xLabel->setStyleSheet("font-weight: normal; color: #666666;");
+    clickDebugLayout->addWidget(xLabel);
+    
+    clickXSpinBox = new QSpinBox(clickDebugWidget);
+    clickXSpinBox->setRange(0, 9999);
+    clickXSpinBox->setValue(100);
+    clickXSpinBox->setStyleSheet("QSpinBox { "
+                                "border: 2px solid #66CCFF; "
+                                "border-radius: 3px; "
+                                "padding: 2px; "
+                                "background-color: white; "
+                                "font-weight: normal; "
+                                "}");
+    clickDebugLayout->addWidget(clickXSpinBox);
+    
+    yLabel = new QLabel("Y:", clickDebugWidget);
+    yLabel->setStyleSheet("font-weight: normal; color: #666666;");
+    clickDebugLayout->addWidget(yLabel);
+    
+    clickYSpinBox = new QSpinBox(clickDebugWidget);
+    clickYSpinBox->setRange(0, 9999);
+    clickYSpinBox->setValue(100);
+    clickYSpinBox->setStyleSheet("QSpinBox { "
+                                "border: 2px solid #66CCFF; "
+                                "border-radius: 3px; "
+                                "padding: 2px; "
+                                "background-color: white; "
+                                "font-weight: normal; "
+                                "}");
+    clickDebugLayout->addWidget(clickYSpinBox);
+    
+    clickDebugWidget->setVisible(false);  // 默认隐藏点击调试参数
+    debugLayout->addWidget(clickDebugWidget);
+    
+    // 开始调试按钮
+    debugButton = new QPushButton("开始调试", debugGroupBox);
+    debugButton->setMinimumHeight(30);
+    debugButton->setStyleSheet("QPushButton { "
+                              "background-color: rgba(255, 152, 0, 200); "
+                              "color: white; "
+                              "border: 2px solid rgba(255, 152, 0, 255); "
+                              "border-radius: 5px; "
+                              "font-weight: bold; "
+                              "padding: 5px; "
+                              "} "
+                              "QPushButton:hover { "
+                              "background-color: #FF9800; "
+                              "} "
+                              "QPushButton:pressed { "
+                              "background-color: #F57C00; "
+                              "}");
+    debugLayout->addWidget(debugButton);
+    
+    verticalLayout_3->addWidget(debugGroupBox);
+#endif
+    
     // 垂直弹簧2
     verticalSpacer_2 = new QSpacerItem(20, 40, QSizePolicy::Minimum, QSizePolicy::Expanding);
     verticalLayout_3->addItem(verticalSpacer_2);
@@ -215,7 +336,7 @@ void arona::appendLog(const QString &message, const QString &level)
     if (level == "INFO") {
         color = "#000000";  // 黑色
     } else if (level == "SUCCESS") {
-        color = "#00AA00";  // 绿色
+        color = "#00A000";  // 绿色
     } else if (level == "WARNING") {
         color = "#FF8800";  // 橙色
     } else if (level == "ERROR") {
@@ -369,42 +490,145 @@ void arona::setBackgroundImage(const QString &imagePath)
         QPixmap croppedPixmap = scaledPixmap.copy(x, y, windowWidth, windowHeight);
 
         palette.setBrush(QPalette::Window, QBrush(croppedPixmap));
-        this->setPalette(palette);
+         this->setPalette(palette);
+     }
+}
+
+#if DEBUG_MODE
+void arona::onDebugTypeChanged(int index)
+{
+    // 当选择"点击调试"时显示坐标输入框，否则隐藏
+    if (index == 1) {  // 点击调试
+        clickDebugWidget->setVisible(true);
+    } else {  // 截图调试
+        clickDebugWidget->setVisible(false);
     }
-    /* // 加载原始图片
-    QPixmap originalPixmap(imagePath);
-    if (originalPixmap.isNull()) {
-        appendLog("加载图片失败", "ERROR");
+}
+
+void arona::onDebugButtonClicked()
+{
+    int debugType = debugTypeComboBox->currentIndex();
+    
+    if (debugType == 0) {
+        // 截图调试
+        screenshotDebug();
+    } else if (debugType == 1) {
+        // 点击调试
+        clickDebug();
+    }
+}
+
+void arona::screenshotDebug()
+{
+    QString handleText = handleLineEdit->text();
+    if (handleText.isEmpty()) {
+        appendLog("请先抓取窗口句柄", "ERROR");
         return;
     }
     
-    // 获取窗口尺寸
-    QSize windowSize = this->size();
-    int windowWidth = windowSize.width();
-    int windowHeight = windowSize.height();
+    bool ok;
+    qint64 handleValue = handleText.toLongLong(&ok);
+    if (!ok) {
+        appendLog("句柄格式错误", "ERROR");
+        return;
+    }
     
-    // 获取图片尺寸
-    int imgWidth = originalPixmap.width();
-    int imgHeight = originalPixmap.height();
+    HWND hwnd = reinterpret_cast<HWND>(handleValue);
     
-    // 计算缩放比例，使图片至少有一个维度与窗口尺寸一致
-    // 使用较大的缩放比例，确保图片能完全覆盖窗口（类似CSS的cover效果）
-    double scaleWidth = static_cast<double>(windowWidth) / imgWidth;
-    double scaleHeight = static_cast<double>(windowHeight) / imgHeight;
-    double scale = qMax(scaleWidth, scaleHeight);
+    // 检查窗口是否有效
+    if (!IsWindow(hwnd)) {
+        appendLog("窗口句柄无效", "ERROR");
+        return;
+    }
     
-    // 按比例缩放图片
-    int scaledWidth = static_cast<int>(imgWidth * scale);
-    int scaledHeight = static_cast<int>(imgHeight * scale);
-    QPixmap scaledPixmap = originalPixmap.scaled(scaledWidth, scaledHeight, 
-                                                  Qt::KeepAspectRatio, 
-                                                  Qt::SmoothTransformation);
+    // 获取窗口矩形区域
+    RECT rect;
+    if (!GetWindowRect(hwnd, &rect)) {
+        appendLog("获取窗口矩形失败", "ERROR");
+        return;
+    }
     
-    // 从中心裁剪图片
-    int cropX = (scaledWidth - windowWidth) / 2;
-    int cropY = (scaledHeight - windowHeight) / 2;
-    backgroundPixmap = scaledPixmap.copy(cropX, cropY, windowWidth, windowHeight);
+    int width = rect.right - rect.left;
+    int height = rect.bottom - rect.top;
     
-    // 触发重绘
-    this->update(); */
+    // 获取窗口DC
+    HDC hdcWindow = GetDC(hwnd);
+    HDC hdcMemDC = CreateCompatibleDC(hdcWindow);
+    HBITMAP hbmScreen = CreateCompatibleBitmap(hdcWindow, width, height);
+    SelectObject(hdcMemDC, hbmScreen);
+    
+    // 复制窗口内容到内存DC
+    PrintWindow(hwnd, hdcMemDC, PW_CLIENTONLY);
+    
+    // 创建QPixmap
+    QPixmap pixmap = QPixmap::fromImage(QImage::fromHBITMAP(hbmScreen));
+    
+    // 清理
+    DeleteObject(hbmScreen);
+    DeleteDC(hdcMemDC);
+    ReleaseDC(hwnd, hdcWindow);
+    
+    // 保存截图
+    QString timestamp = QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss");
+    QString screenshotPath = QString("screenshot_%1.png").arg(timestamp);
+    
+    // 创建screenshots目录
+    QDir dir;
+    if (!dir.exists("screenshots")) {
+        dir.mkdir("screenshots");
+    }
+    
+    screenshotPath = "screenshots/" + screenshotPath;
+    
+    if (pixmap.save(screenshotPath)) {
+        appendLog(QString("截图成功保存: %1").arg(screenshotPath), "SUCCESS");
+    } else {
+        appendLog("保存截图失败", "ERROR");
+    }
 }
+
+void arona::clickDebug()
+{
+    QString handleText = handleLineEdit->text();
+    if (handleText.isEmpty()) {
+        appendLog("请先抓取窗口句柄", "ERROR");
+        return;
+    }
+    
+    bool ok;
+    qint64 handleValue = handleText.toLongLong(&ok);
+    if (!ok) {
+        appendLog("句柄格式错误", "ERROR");
+        return;
+    }
+    
+    HWND hwnd = reinterpret_cast<HWND>(handleValue);
+    
+    // 检查窗口是否有效
+    if (!IsWindow(hwnd)) {
+        appendLog("窗口句柄无效", "ERROR");
+        return;
+    }
+    
+    // 获取点击坐标
+    int x = clickXSpinBox->value();
+    int y = clickYSpinBox->value();
+    
+    // 构造lParam (x和y坐标)
+    LPARAM lParam = MAKELPARAM(x, y);
+    
+    // 发送鼠标按下消息
+    PostMessage(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, lParam);
+    
+    // 延迟一小段时间后发送鼠标抬起消息
+    QTimer::singleShot(50, [hwnd, lParam, this]() {
+        PostMessage(hwnd, WM_LBUTTONUP, 0, lParam);
+        appendLog(QString("已发送点击消息到目标窗口，坐标: (%1, %2)")
+                 .arg(clickXSpinBox->value())
+                 .arg(clickYSpinBox->value()), "SUCCESS");
+    });
+    
+    appendLog(QString("正在模拟点击，坐标: (%1, %2)").arg(x).arg(y), "INFO");
+}
+#endif
+

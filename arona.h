@@ -1,6 +1,9 @@
 #ifndef ARONA_H
 #define ARONA_H
 
+// 调试模式开关 - 设置为1启用调试功能，0禁用
+#define DEBUG_MODE 1
+
 #include <QMainWindow>
 #include <QDateTime>
 #include <QMouseEvent>
@@ -16,6 +19,11 @@
 #include <QEvent>
 #include <QPaintEvent>
 #include <QPixmap>
+#include <QComboBox>
+#include <QSpinBox>
+#include <QLabel>
+#include <QGroupBox>
+#include <QFrame>
 
 class arona : public QMainWindow
 {
@@ -37,6 +45,8 @@ protected:
 private slots:
     void onCaptureHandleButtonPressed();
     void onSelectBgButtonClicked();
+    void onDebugButtonClicked();
+    void onDebugTypeChanged(int index);
 
 private:
     // UI控件
@@ -51,6 +61,20 @@ private:
     QLineEdit *handleLineEdit;
     QTextEdit *logTextEdit;
     QMenuBar *menubar;
+    
+#if DEBUG_MODE
+    // 调试功能控件
+    QGroupBox *debugGroupBox;
+    QComboBox *debugTypeComboBox;
+    QPushButton *debugButton;
+    QWidget *clickDebugWidget;
+    QLabel *clickPosLabel;
+    QSpinBox *clickXSpinBox;
+    QSpinBox *clickYSpinBox;
+    QHBoxLayout *clickDebugLayout;
+    QLabel *xLabel;
+    QLabel *yLabel;
+#endif
     
     // 布局
     QHBoxLayout *horizontalLayout;
@@ -71,5 +95,11 @@ private:
     void setupUi();
     void setBackgroundImage(const QString &imagePath);
     void captureWindowHandle();
+    
+#if DEBUG_MODE
+    // 调试功能函数
+    void screenshotDebug();
+    void clickDebug();
+#endif
 };
 #endif // ARONA_H
