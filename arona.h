@@ -119,6 +119,7 @@ private:
     void moveMouse(int x, int y);  // 移动真实鼠标到屏幕坐标
     void moveMouseToWindow(HWND hwnd, int x, int y);  // 移动真实鼠标到窗口坐标
     void drag(HWND hwnd, int startX, int startY, int endX, int endY, int duration = 500);  // 拖动
+    void scroll(HWND hwnd, int x, int y, int delta);  // 模拟滚轮 (delta>0向上滚, delta<0向下滚)
     void pressKey(int vkCode, bool press);  // 按键控制 (press=true按下, press=false抬起)
     
 #if DEBUG_MODE

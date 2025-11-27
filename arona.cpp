@@ -17,6 +17,7 @@
 #include <QRegularExpression>
 #include <QEventLoop>
 #include <windows.h>
+#include <winuser.h>
 
 arona::arona(QWidget *parent)
     : QMainWindow(parent)
@@ -416,6 +417,16 @@ void arona::onstartButtonClicked()
 
     // 保存句柄副本
     HWND hwnd = reinterpret_cast<HWND>(handleLineEdit->text().toLongLong());
+
+    // 获取窗口位置
+    RECT rect;
+    if (!GetWindowRect(hwnd, &rect)) {
+        appendLog("获取窗口位置失败", "ERROR");
+        return;
+    }
+    int windowX = rect.left;
+    int windowY = rect.top;
+    appendLog(QString("窗口位置: (%1, %2)").arg(windowX).arg(windowY), "SUCCESS");
     
     // 抓取当前窗口截图
     QImage screenshot = captureWindow(hwnd);
@@ -428,12 +439,26 @@ void arona::onstartButtonClicked()
     QString currentPosition = recognizeCurrentPosition(screenshot);
     if (currentPosition.isEmpty()) {
         appendLog("未找到匹配的位置模板", "ERROR");
-        return;
+        // return;
     }
     
     appendLog(QString("当前位置: %1").arg(currentPosition), "SUCCESS");
 
-    moveMouse(1800,1200);
+    moveMouseToWindow(hwnd, 600, 500);
+
+    pressKey(VK_CAPITAL , true);
+    delayMs(100);
+    pressKey(VK_CAPITAL , false);
+
+    delayMs(1000);
+
+    pressKey(VK_CAPITAL , true);
+    delayMs(100);
+    pressKey(VK_CAPITAL , false);
+
+    scroll(hwnd, 600, 500, 5);
+    delayMs(1000);
+    scroll(hwnd, 600, 500, -5);
 }
 
 void arona::onCaptureHandleButtonPressed()
@@ -928,6 +953,35 @@ void arona::drag(HWND hwnd, int startX, int startY, int endX, int endY, int dura
     
     appendLog(QString("拖动完成: (%1, %2) -> (%3, %4)")
              .arg(startX).arg(startY).arg(endX).arg(endY), "SUCCESS");
+}
+
+void arona::scroll(HWND hwnd, int x, int y, int delta)
+{
+    // 检查窗口是否有效
+    if (!IsWindow(hwnd)) {
+        appendLog("窗口句柄无效", "ERROR");
+        return;
+    }
+    
+    // Windows滚轮标准单位为120
+    // delta > 0: 向上滚动
+    // delta < 0: 向下滚动
+    // 通常传入的delta是滚动的"格数"，需要乘以WHEEL_DELTA(120)
+    int wheelDelta = delta * WHEEL_DELTA;
+    
+    // 构造WPARAM
+    // 高位字包含滚动量，低位字包含按键状态（通常为0）
+    WPARAM wParam = MAKEWPARAM(0, wheelDelta);
+    
+    // 构造LPARAM (x和y坐标)
+    LPARAM lParam = MAKELPARAM(x, y);
+    
+    // 发送滚轮消息
+    PostMessage(hwnd, WM_MOUSEWHEEL, wParam, lParam);
+    
+    QString direction = (delta > 0) ? "向上" : "向下";
+    appendLog(QString("已发送滚轮消息: %1滚动%2格，坐标: (%3, %4)")
+             .arg(direction).arg(qAbs(delta)).arg(x).arg(y), "INFO");
 }
 
 void arona::pressKey(int vkCode, bool press)
