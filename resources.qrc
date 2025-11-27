@@ -1,6 +1,9 @@
 <RCC>
     <qresource prefix="/">
         <file>images/background.jpg</file>
+        <file>images/position_templates/(118,960)Hall.png</file>
+        <file>images/position_templates/(230,134)Cafe1.png</file>
+        <file>images/position_templates/(230,134)Cafe2.png</file>
     </qresource>
 </RCC>
 

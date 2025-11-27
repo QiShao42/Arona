@@ -13,6 +13,9 @@
 #include <QScreen>
 #include <QDateTime>
 #include <QDir>
+#include <QDebug>
+#include <QRegularExpression>
+#include <QEventLoop>
 #include <windows.h>
 
 arona::arona(QWidget *parent)
@@ -29,6 +32,10 @@ arona::arona(QWidget *parent)
     // 连接信号和槽
     connect(captureHandleButton, &QPushButton::pressed, this, &arona::onCaptureHandleButtonPressed);
     connect(selectBgButton, &QPushButton::clicked, this, &arona::onSelectBgButtonClicked);
+    connect(startButton, &QPushButton::clicked, this, &arona::onstartButtonClicked);
+
+    // 加载位置模板
+    loadPositionTemplates();
     
 #if DEBUG_MODE
     connect(debugButton, &QPushButton::clicked, this, &arona::onDebugButtonClicked);
@@ -403,6 +410,32 @@ bool arona::eventFilter(QObject *watched, QEvent *event)
     return QMainWindow::eventFilter(watched, event);
 }
 
+void arona::onstartButtonClicked()
+{
+    appendLog("开始执行脚本", "SUCCESS");
+
+    // 保存句柄副本
+    HWND hwnd = reinterpret_cast<HWND>(handleLineEdit->text().toLongLong());
+    
+    // 抓取当前窗口截图
+    QImage screenshot = captureWindow(hwnd);
+    if (screenshot.isNull()) {
+        appendLog("抓取窗口截图失败", "ERROR");
+        return;
+    }
+    
+    // 识别当前位置
+    QString currentPosition = recognizeCurrentPosition(screenshot);
+    if (currentPosition.isEmpty()) {
+        appendLog("未找到匹配的位置模板", "ERROR");
+        return;
+    }
+    
+    appendLog(QString("当前位置: %1").arg(currentPosition), "SUCCESS");
+
+    moveMouse(1800,1200);
+}
+
 void arona::onCaptureHandleButtonPressed()
 {
     waitingForMouseRelease = true;
@@ -494,6 +527,180 @@ void arona::setBackgroundImage(const QString &imagePath)
      }
 }
 
+QImage arona::captureWindow(HWND hwnd)
+{
+    // 检查窗口是否有效
+    if (!IsWindow(hwnd)) {
+        appendLog("窗口句柄无效", "ERROR");
+        return QImage();
+    }
+    
+    // 获取窗口矩形区域
+    RECT rect;
+    if (!GetWindowRect(hwnd, &rect)) {
+        appendLog("获取窗口矩形失败", "ERROR");
+        return QImage();
+    }
+    
+    int width = rect.right - rect.left;
+    int height = rect.bottom - rect.top;
+    
+    // 获取窗口DC
+    HDC hdcWindow = GetDC(hwnd);
+    if (!hdcWindow) {
+        appendLog("获取窗口DC失败", "ERROR");
+        return QImage();
+    }
+    HDC hdcMemDC = CreateCompatibleDC(hdcWindow);
+    if (!hdcMemDC) {
+        appendLog("创建内存DC失败", "ERROR");
+        ReleaseDC(hwnd, hdcWindow);
+        return QImage();
+    }
+    HBITMAP hbmScreen = CreateCompatibleBitmap(hdcWindow, width, height);
+    if (!hbmScreen) {
+        appendLog("创建兼容位图失败", "ERROR");
+        DeleteDC(hdcMemDC);
+        ReleaseDC(hwnd, hdcWindow);
+        return QImage();
+    }
+    SelectObject(hdcMemDC, hbmScreen);
+    // 复制窗口内容到内存DC
+    PrintWindow(hwnd, hdcMemDC, PW_RENDERFULLCONTENT);
+    
+    // 创建QPixmap
+    QPixmap pixmap = QPixmap::fromImage(QImage::fromHBITMAP(hbmScreen));
+    
+    // 清理
+    DeleteObject(hbmScreen);
+    DeleteDC(hdcMemDC);
+    ReleaseDC(hwnd, hdcWindow);
+
+    return pixmap.toImage();
+}
+
+QString arona::calculateImageHash(const QImage& image, const QRect& roi)
+{
+    QImage targetImage = image;
+    
+    // 如果指定了ROI区域，则裁剪图像
+    if (!roi.isNull() && roi.isValid()) {
+        targetImage = image.copy(roi);
+    }
+    
+    // 转换为灰度并缩放为8x8像素进行哈希计算
+    QImage grayImage = targetImage.convertToFormat(QImage::Format_Grayscale8);
+    QImage hashImage = grayImage.scaled(8, 8, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    
+    // 计算平均像素值
+    qint64 totalValue = 0;
+    for (int y = 0; y < 8; ++y) {
+        for (int x = 0; x < 8; ++x) {
+            totalValue += qGray(hashImage.pixel(x, y));
+        }
+    }
+    qint64 avgValue = totalValue / 64;
+    
+    // 生成64位哈希值
+    QString hash;
+    for (int y = 0; y < 8; ++y) {
+        for (int x = 0; x < 8; ++x) {
+            int pixelValue = qGray(hashImage.pixel(x, y));
+            hash += (pixelValue >= avgValue) ? "1" : "0";
+        }
+    }
+    
+    return hash;
+}
+
+void arona::loadPositionTemplates()
+{
+    positionTemplates.clear();
+
+    // 加载位置模板
+    QDir dir(":/images/position_templates");
+    if (!dir.exists()) {
+        appendLog("位置模板目录不存在", "ERROR");
+        return;
+    }
+    QStringList files = dir.entryList(QDir::Files);
+    foreach (QString file, files) {
+        QString filePath = dir.filePath(file);
+        QImage image = QImage(filePath);
+        QString hash = calculateImageHash(image);
+        QString fileName = file.split(".").first();
+        positionTemplates.insert(fileName, hash);
+    }
+
+    appendLog(QString("位置模板加载完成，共加载%1个模板").arg(positionTemplates.size()), "SUCCESS");
+    foreach (QString filePath, positionTemplates.keys()) {
+        qDebug() << "位置模板: " << filePath << ", 哈希值: " << positionTemplates[filePath];
+    }
+}
+
+QString arona::recognizeCurrentPosition(QImage screenshot)
+{
+    // 循环遍历所有的位置模板
+    for (auto it = positionTemplates.begin(); it != positionTemplates.end(); ++it) {
+        QString key = it.key();
+        QString templateHash = it.value();
+        
+        // 解析键中的坐标信息 - 格式: "(x,y)描述"
+        static const QRegularExpression regex("\\((\\d+),(\\d+)\\)(.*)");
+        QRegularExpressionMatch match = regex.match(key);
+
+        if (match.hasMatch()) {
+            int x = match.captured(1).toInt();
+            int y = match.captured(2).toInt();
+            QString description = match.captured(3);
+
+            // 从截图中截取对应的区域 (40x40像素)
+            QRect region(x, y, 36, 36);
+            qDebug() << "截取区域: " << region;
+            
+            // 检查区域是否在截图范围内
+            if (!screenshot.rect().contains(region)) {
+                qDebug() << "区域超出游戏窗口范围，跳过:" << key;
+                continue;
+            }
+            
+            // 截取指定区域
+            QImage regionImage = screenshot.copy(region);
+            if (regionImage.isNull()) {
+                qDebug() << "截取区域失败:" << key;
+                continue;
+            }
+            
+            // 计算该区域的哈希值
+            QString currentHash = calculateImageHash(regionImage);
+
+            // 与模板哈希值进行比较
+            if (currentHash == templateHash) {
+                qDebug() << "找到匹配的位置模板:" << key;
+                qDebug() << "返回描述:" << description;
+                return description; // 返回位置信息
+            }
+            else {
+                // 保存截图
+                QString timestamp = QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss");
+                QString screenshotPath = "screenshots/" + QString("position_%1_%2.png").arg(description).arg(timestamp);
+                if (regionImage.save(screenshotPath))
+                {
+                    qDebug() << "截图保存成功:" << screenshotPath;
+                }
+                else
+                {
+                    qDebug() << "截图保存失败:" << screenshotPath;
+                }
+            }
+        }
+    }
+    
+    // 没有找到匹配的位置
+    qDebug() << "未找到匹配的位置模板";
+    return QString();
+}
+
 #if DEBUG_MODE
 void arona::onDebugTypeChanged(int index)
 {
@@ -534,39 +741,12 @@ void arona::screenshotDebug()
     }
     
     HWND hwnd = reinterpret_cast<HWND>(handleValue);
-    
-    // 检查窗口是否有效
-    if (!IsWindow(hwnd)) {
-        appendLog("窗口句柄无效", "ERROR");
+
+    QImage image = captureWindow(hwnd);
+    if (image.isNull()) {
+        appendLog("截图失败", "ERROR");
         return;
     }
-    
-    // 获取窗口矩形区域
-    RECT rect;
-    if (!GetWindowRect(hwnd, &rect)) {
-        appendLog("获取窗口矩形失败", "ERROR");
-        return;
-    }
-    
-    int width = rect.right - rect.left;
-    int height = rect.bottom - rect.top;
-    
-    // 获取窗口DC
-    HDC hdcWindow = GetDC(hwnd);
-    HDC hdcMemDC = CreateCompatibleDC(hdcWindow);
-    HBITMAP hbmScreen = CreateCompatibleBitmap(hdcWindow, width, height);
-    SelectObject(hdcMemDC, hbmScreen);
-    
-    // 复制窗口内容到内存DC
-    PrintWindow(hwnd, hdcMemDC, PW_CLIENTONLY);
-    
-    // 创建QPixmap
-    QPixmap pixmap = QPixmap::fromImage(QImage::fromHBITMAP(hbmScreen));
-    
-    // 清理
-    DeleteObject(hbmScreen);
-    DeleteDC(hdcMemDC);
-    ReleaseDC(hwnd, hdcWindow);
     
     // 保存截图
     QString timestamp = QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss");
@@ -580,7 +760,7 @@ void arona::screenshotDebug()
     
     screenshotPath = "screenshots/" + screenshotPath;
     
-    if (pixmap.save(screenshotPath)) {
+    if (image.save(screenshotPath)) {
         appendLog(QString("截图成功保存: %1").arg(screenshotPath), "SUCCESS");
     } else {
         appendLog("保存截图失败", "ERROR");
@@ -613,6 +793,17 @@ void arona::clickDebug()
     // 获取点击坐标
     int x = clickXSpinBox->value();
     int y = clickYSpinBox->value();
+
+    QImage image = captureWindow(hwnd);
+    QImage clickArea = image.copy(x, y, 36, 36);
+    // 保存点击区域图像
+    QString position = QString("(%1,%2)").arg(x).arg(y);
+    QString clickAreaPath = "screenshots/" + QString("%1clickArea.png").arg(position);
+    if (clickArea.save(clickAreaPath)) {
+        appendLog(QString("点击区域图像保存: %1").arg(clickAreaPath), "SUCCESS");
+    } else {
+        appendLog("保存点击区域图像失败", "ERROR");
+    }
     
     // 构造lParam (x和y坐标)
     LPARAM lParam = MAKELPARAM(x, y);
@@ -631,4 +822,125 @@ void arona::clickDebug()
     appendLog(QString("正在模拟点击，坐标: (%1, %2)").arg(x).arg(y), "INFO");
 }
 #endif
+
+// ==================== 工具函数实现 ====================
+
+void arona::delayMs(int milliseconds)
+{
+    // 使用QEventLoop实现无阻塞延时
+    // 这样可以保持UI响应，不会冻结界面
+    QEventLoop loop;
+    QTimer::singleShot(milliseconds, &loop, &QEventLoop::quit);
+    loop.exec();
+}
+
+void arona::click(HWND hwnd, int x, int y)
+{
+    // 检查窗口是否有效
+    if (!IsWindow(hwnd)) {
+        appendLog("窗口句柄无效", "ERROR");
+        return;
+    }
+    
+    // 构造lParam (x和y坐标)
+    LPARAM lParam = MAKELPARAM(x, y);
+    
+    // 发送鼠标按下消息
+    PostMessage(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, lParam);
+    
+    // 延迟50ms后发送鼠标抬起消息，模拟真实点击
+    delayMs(50);
+    PostMessage(hwnd, WM_LBUTTONUP, 0, lParam);
+    
+    appendLog(QString("已点击坐标: (%1, %2)").arg(x).arg(y), "INFO");
+}
+
+void arona::moveMouse(int x, int y)
+{
+    // 移动真实鼠标到屏幕坐标
+    SetCursorPos(x, y);
+    appendLog(QString("鼠标已移动到屏幕坐标: (%1, %2)").arg(x).arg(y), "INFO");
+}
+
+void arona::moveMouseToWindow(HWND hwnd, int x, int y)
+{
+    // 检查窗口是否有效
+    if (!IsWindow(hwnd)) {
+        appendLog("窗口句柄无效", "ERROR");
+        return;
+    }
+    
+    // 获取窗口位置
+    RECT rect;
+    if (!GetWindowRect(hwnd, &rect)) {
+        appendLog("获取窗口位置失败", "ERROR");
+        return;
+    }
+    
+    // 计算屏幕坐标 = 窗口左上角 + 相对坐标
+    int screenX = rect.left + x;
+    int screenY = rect.top + y;
+    
+    // 移动鼠标
+    SetCursorPos(screenX, screenY);
+    appendLog(QString("鼠标已移动到窗口坐标: (%1, %2)").arg(x).arg(y), "INFO");
+}
+
+void arona::drag(HWND hwnd, int startX, int startY, int endX, int endY, int duration)
+{
+    // 检查窗口是否有效
+    if (!IsWindow(hwnd)) {
+        appendLog("窗口句柄无效", "ERROR");
+        return;
+    }
+    
+    // 计算拖动步数（每10ms移动一次）
+    int steps = duration / 10;
+    if (steps < 1) steps = 1;
+    
+    // 计算每步的移动距离
+    double deltaX = static_cast<double>(endX - startX) / steps;
+    double deltaY = static_cast<double>(endY - startY) / steps;
+    
+    // 发送鼠标按下消息到起始位置
+    LPARAM startLParam = MAKELPARAM(startX, startY);
+    PostMessage(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, startLParam);
+    
+    appendLog(QString("开始拖动: (%1, %2) -> (%3, %4)")
+             .arg(startX).arg(startY).arg(endX).arg(endY), "INFO");
+    
+    delayMs(50);  // 等待按下消息处理
+    
+    // 逐步移动鼠标
+    for (int i = 1; i <= steps; ++i) {
+        int currentX = startX + static_cast<int>(deltaX * i);
+        int currentY = startY + static_cast<int>(deltaY * i);
+        
+        LPARAM currentLParam = MAKELPARAM(currentX, currentY);
+        PostMessage(hwnd, WM_MOUSEMOVE, MK_LBUTTON, currentLParam);
+        
+        delayMs(10);  // 每步延时10ms
+    }
+    
+    // 发送鼠标抬起消息到终点位置
+    LPARAM endLParam = MAKELPARAM(endX, endY);
+    PostMessage(hwnd, WM_LBUTTONUP, 0, endLParam);
+    
+    appendLog(QString("拖动完成: (%1, %2) -> (%3, %4)")
+             .arg(startX).arg(startY).arg(endX).arg(endY), "SUCCESS");
+}
+
+void arona::pressKey(int vkCode, bool press)
+{
+    // 使用keybd_event发送键盘事件
+    if (press) {
+        // 按下键
+        keybd_event(vkCode, 0, 0, 0);
+        appendLog(QString("按键按下: VK_CODE=%1").arg(vkCode), "INFO");
+    } else {
+        // 抬起键
+        keybd_event(vkCode, 0, KEYEVENTF_KEYUP, 0);
+        appendLog(QString("按键抬起: VK_CODE=%1").arg(vkCode), "INFO");
+    }
+}
 
