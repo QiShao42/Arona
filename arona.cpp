@@ -19,24 +19,47 @@
 #include <windows.h>
 #include <winuser.h>
 
+const QPoint arona::BUTTON_HALL_TO_CAFE1 = QPoint(118, 960);
+const QPoint arona::BUTTON_CAFE1_TO_CAFE2 = QPoint(230, 134);
+const QPoint arona::BUTTON_CAFE2_TO_CAFE1 = QPoint(230, 134);
+
 arona::arona(QWidget *parent)
     : QMainWindow(parent)
     , isCapturingHandle(false)
+    , capturingHandleIndex(1)
     , waitingForMouseRelease(false)
+    , isRunning(false)
+    , shouldStop(false)
     , captureTimer(nullptr)
+    , schedulerTimer(nullptr)
+    , currentHandleIndex(0)
 {
     setupUi();
+    
+    // 初始化多窗口句柄列表
+    gameHandles.resize(3);
+    for (int i = 0; i < 3; i++) {
+        gameHandles[i] = NULL;
+    }
     
     // 设置默认背景图片
     setBackgroundImage(":/images/background.jpg");
     
     // 连接信号和槽
     connect(captureHandleButton, &QPushButton::pressed, this, &arona::onCaptureHandleButtonPressed);
+    connect(captureHandleButton2, &QPushButton::pressed, this, &arona::onCaptureHandle2ButtonPressed);
+    connect(captureHandleButton3, &QPushButton::pressed, this, &arona::onCaptureHandle3ButtonPressed);
     connect(selectBgButton, &QPushButton::clicked, this, &arona::onSelectBgButtonClicked);
     connect(startButton, &QPushButton::clicked, this, &arona::onstartButtonClicked);
+    connect(clearTimersButton, &QPushButton::clicked, this, &arona::onClearTimersButtonClicked);
 
     // 加载位置模板
     loadPositionTemplates();
+    
+    // 创建定时器用于检查定时任务
+    schedulerTimer = new QTimer(this);
+    connect(schedulerTimer, &QTimer::timeout, this, &arona::onSchedulerTimerTimeout);
+    schedulerTimer->start(30000);  // 每30秒检查一次
     
 #if DEBUG_MODE
     connect(debugButton, &QPushButton::clicked, this, &arona::onDebugButtonClicked);
@@ -133,44 +156,80 @@ void arona::setupUi()
     verticalLayout_3->setSpacing(10);
     verticalLayout_3->setContentsMargins(10, 10, 10, 10);
     
-    // 抓取句柄行布局
-    horizontalLayout_2 = new QHBoxLayout();
+    // ==================== 多窗口句柄管理 ====================
+    QString buttonStyle = "QPushButton { "
+                         "background-color: rgba(102, 204, 255, 200); "
+                         "color: white; "
+                         "border: 2px solid rgba(102, 204, 255, 255); "
+                         "border-radius: 5px; "
+                         "font-weight: bold; "
+                         "padding: 5px; "
+                         "font-size: 9pt; "
+                         "} "
+                         "QPushButton:hover { "
+                         "background-color: #55BBEE; "
+                         "} "
+                         "QPushButton:pressed { "
+                         "background-color: #44AADD; "
+                         "}";
     
-    // 抓取句柄按钮
-    captureHandleButton = new QPushButton(area3);
-    captureHandleButton->setMinimumSize(QSize(0, 35));
-    captureHandleButton->setStyleSheet("QPushButton { "
-                                      "background-color: rgba(102, 204, 255, 200); "
-                                      "color: white; "
-                                      "border: 2px solid rgba(102, 204, 255, 255); "
-                                      "border-radius: 5px; "
-                                      "font-weight: bold; "
-                                      "padding: 5px; "
-                                      "} "
-                                      "QPushButton:hover { "
-                                      "background-color: #55BBEE; "
-                                      "} "
-                                      "QPushButton:pressed { "
-                                      "background-color: #44AADD; "
-                                      "}");
-    captureHandleButton->setText("抓取句柄");
+    QString lineEditStyle = "QLineEdit { "
+                           "border: 2px solid #66CCFF; "
+                           "border-radius: 5px; "
+                           "padding: 5px; "
+                           "background-color: white; "
+                           "}";
+    
+    // 句柄1
+    horizontalLayout_2 = new QHBoxLayout();
+    captureHandleButton = new QPushButton("句柄1", area3);
+    captureHandleButton->setMinimumSize(QSize(0, 30));
+    captureHandleButton->setStyleSheet(buttonStyle);
     horizontalLayout_2->addWidget(captureHandleButton);
     
-    // 句柄输入框
     handleLineEdit = new QLineEdit(area3);
-    handleLineEdit->setMinimumSize(QSize(80, 35));
+    handleLineEdit->setMinimumSize(QSize(80, 30));
     handleLineEdit->setMaximumSize(QSize(80, 16777215));
-    handleLineEdit->setStyleSheet("QLineEdit { "
-                                 "border: 2px solid #66CCFF; "
-                                 "border-radius: 5px; "
-                                 "padding: 5px; "
-                                 "background-color: white; "
-                                 "}");
+    handleLineEdit->setStyleSheet(lineEditStyle);
     handleLineEdit->setReadOnly(true);
     handleLineEdit->setAlignment(Qt::AlignCenter);
+    handleLineEdit->setPlaceholderText("空");
     horizontalLayout_2->addWidget(handleLineEdit);
-    
     verticalLayout_3->addLayout(horizontalLayout_2);
+    
+    // 句柄2
+    QHBoxLayout *horizontalLayout_handle2 = new QHBoxLayout();
+    captureHandleButton2 = new QPushButton("句柄2", area3);
+    captureHandleButton2->setMinimumSize(QSize(0, 30));
+    captureHandleButton2->setStyleSheet(buttonStyle);
+    horizontalLayout_handle2->addWidget(captureHandleButton2);
+    
+    handleLineEdit2 = new QLineEdit(area3);
+    handleLineEdit2->setMinimumSize(QSize(80, 30));
+    handleLineEdit2->setMaximumSize(QSize(80, 16777215));
+    handleLineEdit2->setStyleSheet(lineEditStyle);
+    handleLineEdit2->setReadOnly(true);
+    handleLineEdit2->setAlignment(Qt::AlignCenter);
+    handleLineEdit2->setPlaceholderText("空");
+    horizontalLayout_handle2->addWidget(handleLineEdit2);
+    verticalLayout_3->addLayout(horizontalLayout_handle2);
+    
+    // 句柄3
+    QHBoxLayout *horizontalLayout_handle3 = new QHBoxLayout();
+    captureHandleButton3 = new QPushButton("句柄3", area3);
+    captureHandleButton3->setMinimumSize(QSize(0, 30));
+    captureHandleButton3->setStyleSheet(buttonStyle);
+    horizontalLayout_handle3->addWidget(captureHandleButton3);
+    
+    handleLineEdit3 = new QLineEdit(area3);
+    handleLineEdit3->setMinimumSize(QSize(80, 30));
+    handleLineEdit3->setMaximumSize(QSize(80, 16777215));
+    handleLineEdit3->setStyleSheet(lineEditStyle);
+    handleLineEdit3->setReadOnly(true);
+    handleLineEdit3->setAlignment(Qt::AlignCenter);
+    handleLineEdit3->setPlaceholderText("空");
+    horizontalLayout_handle3->addWidget(handleLineEdit3);
+    verticalLayout_3->addLayout(horizontalLayout_handle3);
     
     // 选择背景图按钮
     selectBgButton = new QPushButton(area3);
@@ -191,6 +250,86 @@ void arona::setupUi()
                                  "}");
     selectBgButton->setText("选择背景图");
     verticalLayout_3->addWidget(selectBgButton);
+    
+    // ==================== 定时功能区 ====================
+    timerGroupBox = new QGroupBox("定时执行", area3);
+    timerGroupBox->setStyleSheet("QGroupBox { "
+                                "border: 2px solid #FF9800; "
+                                "border-radius: 5px; "
+                                "margin-top: 10px; "
+                                "padding-top: 10px; "
+                                "font-weight: bold; "
+                                "color: #FF9800; "
+                                "} "
+                                "QGroupBox::title { "
+                                "subcontrol-origin: margin; "
+                                "subcontrol-position: top center; "
+                                "padding: 0 5px; "
+                                "background-color: white; "
+                                "}");
+    
+    QVBoxLayout *timerLayout = new QVBoxLayout(timerGroupBox);
+    timerLayout->setSpacing(5);
+    timerLayout->setContentsMargins(8, 15, 8, 8);
+    
+    // 启用定时复选框
+    enableTimerCheckBox = new QCheckBox("启用定时执行", timerGroupBox);
+    enableTimerCheckBox->setStyleSheet("QCheckBox { font-weight: normal; color: #333; }");
+    timerLayout->addWidget(enableTimerCheckBox);
+    
+    // 时间列表容器
+    timerListWidget = new QWidget(timerGroupBox);
+    timerListLayout = new QVBoxLayout(timerListWidget);
+    timerListLayout->setSpacing(3);
+    timerListLayout->setContentsMargins(0, 0, 0, 0);
+    
+    // 创建8个时间选择器
+    for (int i = 0; i < 8; i++) {
+        QHBoxLayout *timeRowLayout = new QHBoxLayout();
+        timeRowLayout->setSpacing(5);
+        
+        timeCheckBoxes[i] = new QCheckBox(timerListWidget);
+        timeCheckBoxes[i]->setStyleSheet("QCheckBox { font-weight: normal; }");
+        timeRowLayout->addWidget(timeCheckBoxes[i]);
+        
+        timeEdits[i] = new QTimeEdit(timerListWidget);
+        timeEdits[i]->setDisplayFormat("HH:mm");
+        timeEdits[i]->setTime(QTime(0, 0));
+        timeEdits[i]->setStyleSheet("QTimeEdit { "
+                                   "border: 1px solid #FF9800; "
+                                   "border-radius: 3px; "
+                                   "padding: 2px; "
+                                   "background-color: white; "
+                                   "font-weight: normal; "
+                                   "}");
+        timeRowLayout->addWidget(timeEdits[i]);
+        
+        timerListLayout->addLayout(timeRowLayout);
+    }
+    
+    timerLayout->addWidget(timerListWidget);
+    
+    // 清空定时按钮
+    clearTimersButton = new QPushButton("清空所有定时", timerGroupBox);
+    clearTimersButton->setMinimumHeight(25);
+    clearTimersButton->setStyleSheet("QPushButton { "
+                                    "background-color: rgba(255, 152, 0, 150); "
+                                    "color: white; "
+                                    "border: 1px solid rgba(255, 152, 0, 255); "
+                                    "border-radius: 3px; "
+                                    "font-weight: bold; "
+                                    "font-size: 9pt; "
+                                    "padding: 3px; "
+                                    "} "
+                                    "QPushButton:hover { "
+                                    "background-color: rgba(255, 152, 0, 200); "
+                                    "} "
+                                    "QPushButton:pressed { "
+                                    "background-color: rgba(245, 124, 0, 255); "
+                                    "}");
+    timerLayout->addWidget(clearTimersButton);
+    
+    verticalLayout_3->addWidget(timerGroupBox);
     
 #if DEBUG_MODE
     // ==================== 调试功能区 ====================
@@ -218,6 +357,7 @@ void arona::setupUi()
     debugTypeComboBox = new QComboBox(debugGroupBox);
     debugTypeComboBox->addItem("截图调试");
     debugTypeComboBox->addItem("点击调试");
+    debugTypeComboBox->addItem("按键调试");
     debugTypeComboBox->setStyleSheet("QComboBox { "
                                     "border: 2px solid #66CCFF; "
                                     "border-radius: 3px; "
@@ -278,6 +418,44 @@ void arona::setupUi()
     
     clickDebugWidget->setVisible(false);  // 默认隐藏点击调试参数
     debugLayout->addWidget(clickDebugWidget);
+    
+    // 按键调试参数容器
+    keyDebugWidget = new QWidget(debugGroupBox);
+    keyDebugLayout = new QHBoxLayout(keyDebugWidget);
+    keyDebugLayout->setSpacing(5);
+    keyDebugLayout->setContentsMargins(0, 0, 0, 0);
+    
+    QLabel *keyLabel = new QLabel("按键:", keyDebugWidget);
+    keyLabel->setStyleSheet("font-weight: normal; color: #666666;");
+    keyDebugLayout->addWidget(keyLabel);
+    
+    keySelectComboBox = new QComboBox(keyDebugWidget);
+    keySelectComboBox->addItem("F", 0x46);          // F键
+    keySelectComboBox->addItem("Ctrl", VK_CONTROL); // Ctrl键
+    keySelectComboBox->addItem("CapsLock", VK_CAPITAL); // CapsLock键
+    keySelectComboBox->addItem("Shift", VK_SHIFT); // Shift键
+    keySelectComboBox->setStyleSheet("QComboBox { "
+                                    "border: 2px solid #66CCFF; "
+                                    "border-radius: 3px; "
+                                    "padding: 3px; "
+                                    "background-color: white; "
+                                    "font-weight: normal; "
+                                    "} "
+                                    "QComboBox::drop-down { "
+                                    "border: none; "
+                                    "} "
+                                    "QComboBox::down-arrow { "
+                                    "image: none; "
+                                    "border-left: 4px solid transparent; "
+                                    "border-right: 4px solid transparent; "
+                                    "border-top: 5px solid #66CCFF; "
+                                    "width: 0; "
+                                    "height: 0; "
+                                    "}");
+    keyDebugLayout->addWidget(keySelectComboBox);
+    
+    keyDebugWidget->setVisible(false);  // 默认隐藏按键调试参数
+    debugLayout->addWidget(keyDebugWidget);
     
     // 开始调试按钮
     debugButton = new QPushButton("开始调试", debugGroupBox);
@@ -402,7 +580,10 @@ bool arona::eventFilter(QObject *watched, QEvent *event)
             QApplication::instance()->removeEventFilter(this);
             
             // 延迟一小段时间后捕获，确保鼠标事件已经处理完成
-            QTimer::singleShot(100, this, &arona::captureWindowHandle);
+            int index = capturingHandleIndex;
+            QTimer::singleShot(100, this, [this, index]() {
+                captureWindowHandle(index);
+            });
             
             return true;  // 事件已处理
         }
@@ -413,56 +594,18 @@ bool arona::eventFilter(QObject *watched, QEvent *event)
 
 void arona::onstartButtonClicked()
 {
-    appendLog("开始执行脚本", "SUCCESS");
-
-    // 保存句柄副本
-    HWND hwnd = reinterpret_cast<HWND>(handleLineEdit->text().toLongLong());
-
-    // 获取窗口位置
-    RECT rect;
-    if (!GetWindowRect(hwnd, &rect)) {
-        appendLog("获取窗口位置失败", "ERROR");
-        return;
+    if (isRunning) {
+        // 当前正在运行，点击按钮则停止
+        stopScript();
+    } else {
+        // 当前未运行，点击按钮则启动
+        startScript();
     }
-    int windowX = rect.left;
-    int windowY = rect.top;
-    appendLog(QString("窗口位置: (%1, %2)").arg(windowX).arg(windowY), "SUCCESS");
-    
-    // 抓取当前窗口截图
-    QImage screenshot = captureWindow(hwnd);
-    if (screenshot.isNull()) {
-        appendLog("抓取窗口截图失败", "ERROR");
-        return;
-    }
-    
-    // 识别当前位置
-    QString currentPosition = recognizeCurrentPosition(screenshot);
-    if (currentPosition.isEmpty()) {
-        appendLog("未找到匹配的位置模板", "ERROR");
-        // return;
-    }
-    
-    appendLog(QString("当前位置: %1").arg(currentPosition), "SUCCESS");
-
-    moveMouseToWindow(hwnd, 600, 500);
-
-    pressKey(VK_CAPITAL , true);
-    delayMs(100);
-    pressKey(VK_CAPITAL , false);
-
-    delayMs(1000);
-
-    pressKey(VK_CAPITAL , true);
-    delayMs(100);
-    pressKey(VK_CAPITAL , false);
-
-    scroll(hwnd, 600, 500, 5);
-    delayMs(1000);
-    scroll(hwnd, 600, 500, -5);
 }
 
 void arona::onCaptureHandleButtonPressed()
 {
+    capturingHandleIndex = 1;
     waitingForMouseRelease = true;
     isCapturingHandle = true;
     
@@ -471,11 +614,35 @@ void arona::onCaptureHandleButtonPressed()
     
     // 改变鼠标样式为准心
     QApplication::setOverrideCursor(Qt::CrossCursor);
-    
-    appendLog("正在抓取窗口句柄，请按住鼠标移动到目标窗口然后松开...", "INFO");
+
+    appendLog("正在抓取窗口句柄1，请按住鼠标移动到目标窗口然后松开...", "INFO");
 }
 
-void arona::captureWindowHandle()
+void arona::onCaptureHandle2ButtonPressed()
+{
+    capturingHandleIndex = 2;
+    waitingForMouseRelease = true;
+    isCapturingHandle = true;
+    
+    QApplication::instance()->installEventFilter(this);
+    QApplication::setOverrideCursor(Qt::CrossCursor);
+    
+    appendLog("正在抓取窗口句柄2，请按住鼠标移动到目标窗口然后松开...", "INFO");
+}
+
+void arona::onCaptureHandle3ButtonPressed()
+{
+    capturingHandleIndex = 3;
+    waitingForMouseRelease = true;
+    isCapturingHandle = true;
+    
+    QApplication::instance()->installEventFilter(this);
+    QApplication::setOverrideCursor(Qt::CrossCursor);
+    
+    appendLog("正在抓取窗口句柄3，请按住鼠标移动到目标窗口然后松开...", "INFO");
+}
+
+void arona::captureWindowHandle(int handleIndex)
 {
     isCapturingHandle = false;
     
@@ -492,7 +659,19 @@ void arona::captureWindowHandle()
     if (hwnd != NULL) {
         // 将句柄转换为10进制整数并显示
         qint64 handleValue = reinterpret_cast<qint64>(hwnd);
-        handleLineEdit->setText(QString::number(handleValue));
+        
+        // 存储到对应的句柄列表中
+        gameHandles[handleIndex - 1] = hwnd;
+        
+        // 更新对应的输入框
+        QLineEdit *targetEdit = nullptr;
+        if (handleIndex == 1) targetEdit = handleLineEdit;
+        else if (handleIndex == 2) targetEdit = handleLineEdit2;
+        else if (handleIndex == 3) targetEdit = handleLineEdit3;
+        
+        if (targetEdit) {
+            targetEdit->setText(QString::number(handleValue));
+        }
         
         // 获取窗口标题
         wchar_t windowTitle[256];
@@ -503,10 +682,17 @@ void arona::captureWindowHandle()
             title = "(无标题窗口)";
         }
         
-        appendLog(QString("成功抓取窗口句柄: %1, 窗口标题: %2").arg(handleValue).arg(title), "SUCCESS");
+        // 打印窗口句柄，标题和窗口类名
+        wchar_t className[256];
+        GetClassNameW(hwnd, className, 256);
+        QString classNameStr = QString::fromWCharArray(className);
+        appendLog(QString("成功抓取窗口句柄%1: %2, 窗口标题: %3, 窗口类名: %4")
+                 .arg(handleIndex).arg(handleValue).arg(title).arg(classNameStr), "SUCCESS");
     } else {
-        appendLog("抓取窗口句柄失败", "ERROR");
-        handleLineEdit->clear();
+        appendLog(QString("抓取窗口句柄%1失败").arg(handleIndex), "ERROR");
+        if (handleIndex == 1) handleLineEdit->clear();
+        else if (handleIndex == 2) handleLineEdit2->clear();
+        else if (handleIndex == 3) handleLineEdit3->clear();
     }
 }
 
@@ -679,7 +865,7 @@ QString arona::recognizeCurrentPosition(QImage screenshot)
             int y = match.captured(2).toInt();
             QString description = match.captured(3);
 
-            // 从截图中截取对应的区域 (40x40像素)
+            // 从截图中截取对应的区域 (36x36像素)
             QRect region(x, y, 36, 36);
             qDebug() << "截取区域: " << region;
             
@@ -707,16 +893,16 @@ QString arona::recognizeCurrentPosition(QImage screenshot)
             }
             else {
                 // 保存截图
-                QString timestamp = QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss");
-                QString screenshotPath = "screenshots/" + QString("position_%1_%2.png").arg(description).arg(timestamp);
-                if (regionImage.save(screenshotPath))
-                {
-                    qDebug() << "截图保存成功:" << screenshotPath;
-                }
-                else
-                {
-                    qDebug() << "截图保存失败:" << screenshotPath;
-                }
+                // QString timestamp = QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss");
+                // QString screenshotPath = "screenshots/" + QString("position_%1_%2.png").arg(description).arg(timestamp);
+                // if (regionImage.save(screenshotPath))
+                // {
+                //     qDebug() << "截图保存成功:" << screenshotPath;
+                // }
+                // else
+                // {
+                //     qDebug() << "截图保存失败:" << screenshotPath;
+                // }
             }
         }
     }
@@ -726,15 +912,195 @@ QString arona::recognizeCurrentPosition(QImage screenshot)
     return QString();
 }
 
+void arona::enterCafe1FromHall(HWND hwnd)
+{
+    // 从大厅进入咖啡厅1
+    click(hwnd, BUTTON_HALL_TO_CAFE1.x(), BUTTON_HALL_TO_CAFE1.y());
+}
+
+void arona::enterCafe2FromCafe1(HWND hwnd)
+{
+    // 从咖啡厅1进入咖啡厅2
+    click(hwnd, BUTTON_CAFE1_TO_CAFE2.x(), BUTTON_CAFE1_TO_CAFE2.y());
+}
+
+void arona::enterCafe1FromCafe2(HWND hwnd)
+{
+    // 从咖啡厅2进入大厅
+    click(hwnd, BUTTON_CAFE2_TO_CAFE1.x(), BUTTON_CAFE2_TO_CAFE1.y());
+}
+
+// ==================== 辅助逻辑函数实现（封装重复逻辑） ====================
+
+bool arona::waitForPosition(HWND hwnd, const QString &targetPosition, int maxRetries, int delayMs, int clickX, int clickY)
+{
+    appendLog(QString("等待进入位置: %1 (最多等待%2次)").arg(targetPosition).arg(maxRetries), "INFO");
+    
+    int retries = maxRetries;
+    while (retries > 0)
+    {
+        // 检查是否需要停止
+        if (shouldStop) {
+            appendLog("========== 脚本已停止 ==========", "WARNING");
+            isRunning = false;
+            updateStartButtonState();
+            return false;
+        }
+        
+        // 截图并识别当前位置
+        QImage screenshot = captureWindow(hwnd);
+        QString currentPosition = recognizeCurrentPosition(screenshot);
+        
+        if (currentPosition == targetPosition)
+        {
+            appendLog(QString("进入%1成功").arg(targetPosition), "SUCCESS");
+            return true;
+        }
+        
+        retries--;
+        
+        // 延时并检查停止信号
+        if (!delayMsWithCheck(delayMs)) {
+            appendLog("========== 脚本已停止 ==========", "WARNING");
+            isRunning = false;
+            updateStartButtonState();
+            return false;
+        }
+        
+        // 点击游戏窗口边缘（防止超时）
+        click(hwnd, clickX, clickY);
+    }
+    
+    // 超时失败
+    appendLog(QString("进入%1失败（超时）").arg(targetPosition), "ERROR");
+    isRunning = false;
+    updateStartButtonState();
+    return false;
+}
+
+bool arona::adjustCafeView(HWND hwnd, int scrollX, int scrollY, int scrollCount)
+{
+    // appendLog(QString("开始调整咖啡厅视角（滚动%1次）").arg(scrollCount), "INFO");
+    
+    // 唤醒游戏窗口
+    SetForegroundWindow(hwnd);
+    SetFocus(hwnd);
+    delayMs(200);
+    
+    // 按下CTRL键
+    pressKeyGlobal(VK_CONTROL, 1);
+    
+    if (!delayMsWithCheck(500)) {
+        pressKeyGlobal(VK_CONTROL, 0);
+        appendLog("========== 脚本已停止 ==========", "WARNING");
+        isRunning = false;
+        updateStartButtonState();
+        return false;
+    }
+    
+    // 循环滚动鼠标滚轮
+    for (int i = 0; i < scrollCount; i++)
+    {
+        if (shouldStop) {
+            pressKeyGlobal(VK_CONTROL, 0);
+            appendLog("========== 脚本已停止 ==========", "WARNING");
+            isRunning = false;
+            updateStartButtonState();
+            return false;
+        }
+        
+        scroll(hwnd, scrollX, scrollY, -3);
+        
+        if (!delayMsWithCheck(200)) {
+            pressKeyGlobal(VK_CONTROL, 0);
+            appendLog("========== 脚本已停止 ==========", "WARNING");
+            isRunning = false;
+            updateStartButtonState();
+            return false;
+        }
+    }
+    
+    // 释放CTRL键
+    pressKeyGlobal(VK_CONTROL, 0);
+    
+    // appendLog("咖啡厅视角调整完成", "SUCCESS");
+    return true;
+}
+
+void arona::adjustCafePosition(HWND hwnd)
+{
+    // appendLog("开始调整咖啡厅位置（3次拖拽）", "INFO");
+    
+    drag(hwnd, 1680, 240, 130, 1040, 1000);
+    drag(hwnd, 400, 400, 1900, 900, 1000);
+    drag(hwnd, 1080, 1040, 1680, 240, 1000);
+    
+    // appendLog("咖啡厅位置调整完成", "SUCCESS");
+}
+
+void arona::patStudents(HWND hwnd, int rounds)
+{
+    appendLog(QString("阿罗娜，开始摸头（循环%1轮）").arg(rounds), "INFO");
+    
+    for (int i = 0; i < rounds; i++)
+    {
+        if (shouldStop) {
+            appendLog("========== 脚本已停止 ==========", "WARNING");
+            isRunning = false;
+            updateStartButtonState();
+            return;
+        }
+        
+        // appendLog(QString("摸头第%1/%2轮").arg(i + 1).arg(rounds), "INFO");
+        clickGrid(hwnd, 200, 240, 1900, 880, 65, 20);
+        delayMs(1000);
+    }
+    
+    appendLog("阿罗娜，摸头完成", "SUCCESS");
+}
+
+void arona::closeGameWindow(HWND hwnd)
+{
+    // 找到父窗口，关闭游戏
+    HWND parentHwnd = GetParent(hwnd);
+    if (parentHwnd != NULL)
+    {
+        // 获取父窗口标题
+        wchar_t title[256];
+        GetWindowTextW(parentHwnd, title, 256);
+        QString titleStr = QString::fromWCharArray(title);
+        appendLog(QString("父窗口标题: %1").arg(titleStr), "INFO");
+        
+        if (titleStr == "大号" || titleStr == "最大号" || titleStr == "小七")
+        {
+            // 点击关闭按钮
+            click(parentHwnd, 703, 30);
+            appendLog(QString("已关闭窗口: %1").arg(titleStr), "SUCCESS");
+        }
+        else
+        {
+            appendLog(QString("父窗口标题: %1，不在关闭列表中").arg(titleStr), "WARNING");
+        }
+    }
+    else
+    {
+        appendLog("未找到父窗口", "WARNING");
+    }
+}
+
 #if DEBUG_MODE
 void arona::onDebugTypeChanged(int index)
 {
-    // 当选择"点击调试"时显示坐标输入框，否则隐藏
+    // 根据调试类型显示/隐藏对应的参数控件
+    clickDebugWidget->setVisible(false);
+    keyDebugWidget->setVisible(false);
+    
     if (index == 1) {  // 点击调试
         clickDebugWidget->setVisible(true);
-    } else {  // 截图调试
-        clickDebugWidget->setVisible(false);
+    } else if (index == 2) {  // 按键调试
+        keyDebugWidget->setVisible(true);
     }
+    // index == 0 (截图调试) 不需要额外参数，都隐藏
 }
 
 void arona::onDebugButtonClicked()
@@ -747,6 +1113,9 @@ void arona::onDebugButtonClicked()
     } else if (debugType == 1) {
         // 点击调试
         clickDebug();
+    } else if (debugType == 2) {
+        // 按键调试
+        keyDebug();
     }
 }
 
@@ -839,14 +1208,244 @@ void arona::clickDebug()
     // 延迟一小段时间后发送鼠标抬起消息
     QTimer::singleShot(50, [hwnd, lParam, this]() {
         PostMessage(hwnd, WM_LBUTTONUP, 0, lParam);
-        appendLog(QString("已发送点击消息到目标窗口，坐标: (%1, %2)")
-                 .arg(clickXSpinBox->value())
-                 .arg(clickYSpinBox->value()), "SUCCESS");
+        // appendLog(QString("已发送点击消息到目标窗口，坐标: (%1, %2)")
+        //          .arg(clickXSpinBox->value())
+        //          .arg(clickYSpinBox->value()), "SUCCESS");
     });
     
     appendLog(QString("正在模拟点击，坐标: (%1, %2)").arg(x).arg(y), "INFO");
 }
+
+void arona::keyDebug()
+{
+    QString handleText = handleLineEdit->text();
+    if (handleText.isEmpty()) {
+        appendLog("请先抓取窗口句柄", "ERROR");
+        return;
+    }
+    
+    bool ok;
+    qint64 handleValue = handleText.toLongLong(&ok);
+    if (!ok) {
+        appendLog("句柄格式错误", "ERROR");
+        return;
+    }
+    
+    HWND hwnd = reinterpret_cast<HWND>(handleValue);
+    
+    // 检查窗口是否有效
+    if (!IsWindow(hwnd)) {
+        appendLog("窗口句柄无效", "ERROR");
+        return;
+    }
+    
+    // 获取选中的按键
+    int vkCode = keySelectComboBox->currentData().toInt();
+    QString keyName = keySelectComboBox->currentText();
+    
+    appendLog(QString("正在模拟按键: %1 (VK=0x%2)")
+             .arg(keyName)
+             .arg(vkCode, 2, 16, QChar('0')), "INFO");
+
+    // 唤醒游戏窗口
+    click(hwnd, 820, 800);
+    SetForegroundWindow(hwnd);
+    SetFocus(hwnd);
+    
+    delayMs(200);
+    
+    // 按下按键
+    // pressKey(hwnd, vkCode, 1);
+    pressKeyGlobal(vkCode, 1);
+    delayMs(100);
+    pressKeyGlobal(vkCode, 0);
+    delayMs(100);
+    pressKeyGlobal(vkCode, 1);
+    delayMs(100);
+    pressKeyGlobal(vkCode, 0);
+    delayMs(100);
+    pressKeyGlobal(vkCode, 1);
+    delayMs(100);
+    pressKeyGlobal(vkCode, 0);
+    delayMs(500);
+    pressKeyGlobal(vkCode, 1);
+    
+    // 延迟1000ms后抬起按键
+    QTimer::singleShot(500, [hwnd, vkCode, keyName, this]() {
+        // pressKey(hwnd, vkCode, 0);
+        pressKeyGlobal(vkCode, 0);
+        appendLog(QString("已完成按键模拟: %1").arg(keyName), "SUCCESS");
+    });
+}
 #endif
+
+// ==================== 脚本控制函数实现 ====================
+
+void arona::startScript()
+{
+    // 检查是否已经在运行
+    if (isRunning) {
+        appendLog("脚本已经在运行中", "WARNING");
+        return;
+    }
+    
+    // 统计有效窗口数量
+    int validWindowCount = 0;
+    for (int i = 0; i < 3; i++) {
+        if (gameHandles[i] != NULL && IsWindow(gameHandles[i])) {
+            validWindowCount++;
+        }
+    }
+    
+    if (validWindowCount == 0) {
+        appendLog("请先抓取至少一个窗口句柄", "ERROR");
+        return;
+    }
+    
+    // 设置运行状态
+    isRunning = true;
+    shouldStop = false;
+    updateStartButtonState();
+    
+    appendLog("========== 脚本启动 ==========", "SUCCESS");
+    appendLog(QString("检测到%1个有效窗口，将依次执行").arg(validWindowCount), "INFO");
+    
+    // 使用QTimer异步执行脚本，避免阻塞UI
+    QTimer::singleShot(100, this, &arona::executeAllWindows);
+}
+
+void arona::stopScript()
+{
+    if (!isRunning) {
+        appendLog("脚本未在运行", "WARNING");
+        return;
+    }
+    
+    shouldStop = true;
+    appendLog("正在停止脚本...", "WARNING");
+}
+
+void arona::updateStartButtonState()
+{
+    if (isRunning) {
+        // 运行中 - 显示为停止按钮（红色）
+        startButton->setText("停止");
+        startButton->setStyleSheet("QPushButton { "
+                                  "background-color: rgba(244, 67, 54, 200); "
+                                  "color: white; "
+                                  "border: 2px solid rgba(244, 67, 54, 255); "
+                                  "border-radius: 5px; "
+                                  "font-weight: bold; "
+                                  "font-size: 14pt; "
+                                  "padding: 5px; "
+                                  "} "
+                                  "QPushButton:hover { "
+                                  "background-color: #E53935; "
+                                  "} "
+                                  "QPushButton:pressed { "
+                                  "background-color: #C62828; "
+                                  "}");
+    } else {
+        // 停止状态 - 显示为启动按钮（蓝色）
+        startButton->setText("启动");
+        startButton->setStyleSheet("QPushButton { "
+                                  "background-color: rgba(102, 204, 255, 200); "
+                                  "color: white; "
+                                  "border: 2px solid rgba(102, 204, 255, 255); "
+                                  "border-radius: 5px; "
+                                  "font-weight: bold; "
+                                  "font-size: 14pt; "
+                                  "padding: 5px; "
+                                  "} "
+                                  "QPushButton:hover { "
+                                  "background-color: #55BBEE; "
+                                  "} "
+                                  "QPushButton:pressed { "
+                                  "background-color: #44AADD; "
+                                  "}");
+    }
+}
+
+void arona::executeScript()
+{
+    // ==================== 初始化 ====================
+    HWND hwnd = reinterpret_cast<HWND>(handleLineEdit->text().toLongLong());
+
+    // 获取窗口位置
+    RECT rect;
+    if (!GetWindowRect(hwnd, &rect)) {
+        appendLog("获取窗口位置失败", "ERROR");
+        isRunning = false;
+        updateStartButtonState();
+        return;
+    }
+    appendLog(QString("窗口位置: (%1, %2)").arg(rect.left).arg(rect.top), "SUCCESS");
+    
+    // 检查停止信号
+    if (shouldStop) {
+        appendLog("========== 脚本已停止 ==========", "WARNING");
+        isRunning = false;
+        updateStartButtonState();
+        return;
+    }
+
+    // ==================== 启动游戏并进入大厅 ====================
+    click(hwnd, 1450, 200);
+    if (!waitForPosition(hwnd, "Hall", 20, 4000, 120, 640)) {
+        return;  // 进入失败，已在函数内处理
+    }
+
+    // ==================== 咖啡厅1 ====================
+    appendLog("阿罗娜，前往咖啡厅1", "INFO");
+    
+    // 进入咖啡厅1
+    enterCafe1FromHall(hwnd);
+    if (!waitForPosition(hwnd, "Cafe1", 10, 1500, 150, 1045)) {
+        return;
+    }
+    
+    // 调整视角和位置
+    if (!adjustCafeView(hwnd, 1500, 600, 12)) {
+        return;
+    }
+    adjustCafePosition(hwnd);
+    
+    // 摸头
+    patStudents(hwnd, 3);
+    
+    if (!delayMsWithCheck(500)) {
+        appendLog("========== 脚本已停止 ==========", "WARNING");
+        isRunning = false;
+        updateStartButtonState();
+        return;
+    }
+
+    // ==================== 咖啡厅2 ====================
+    appendLog("阿罗娜，前往咖啡厅2", "INFO");
+    
+    // 进入咖啡厅2
+    enterCafe2FromCafe1(hwnd);
+    if (!waitForPosition(hwnd, "Cafe2", 10, 1500, 150, 1045)) {
+        return;
+    }
+    
+    // 调整视角和位置
+    if (!adjustCafeView(hwnd, 1500, 600, 12)) {
+        return;
+    }
+    adjustCafePosition(hwnd);
+    
+    // 摸头
+    patStudents(hwnd, 3);
+
+    // ==================== 关闭游戏 ====================
+    closeGameWindow(hwnd);
+    
+    // ==================== 完成 ====================
+    appendLog("========== 脚本执行完成 ==========", "SUCCESS");
+    isRunning = false;
+    updateStartButtonState();
+}
 
 // ==================== 工具函数实现 ====================
 
@@ -857,6 +1456,35 @@ void arona::delayMs(int milliseconds)
     QEventLoop loop;
     QTimer::singleShot(milliseconds, &loop, &QEventLoop::quit);
     loop.exec();
+}
+
+bool arona::delayMsWithCheck(int milliseconds)
+{
+    // 带停止检查的延时函数
+    // 每100ms检查一次是否需要停止
+    // 返回false表示需要停止，返回true表示延时完成
+    
+    int elapsed = 0;
+    int checkInterval = 100;  // 每100ms检查一次
+    
+    while (elapsed < milliseconds) {
+        // 检查是否需要停止
+        if (shouldStop) {
+            return false;
+        }
+        
+        // 计算本次需要延时的时间
+        int delayTime = qMin(checkInterval, milliseconds - elapsed);
+        
+        // 延时
+        QEventLoop loop;
+        QTimer::singleShot(delayTime, &loop, &QEventLoop::quit);
+        loop.exec();
+        
+        elapsed += delayTime;
+    }
+    
+    return true;
 }
 
 void arona::click(HWND hwnd, int x, int y)
@@ -877,7 +1505,68 @@ void arona::click(HWND hwnd, int x, int y)
     delayMs(50);
     PostMessage(hwnd, WM_LBUTTONUP, 0, lParam);
     
-    appendLog(QString("已点击坐标: (%1, %2)").arg(x).arg(y), "INFO");
+    // appendLog(QString("已点击坐标: (%1, %2)").arg(x).arg(y), "INFO");
+}
+
+void arona::clickGrid(HWND hwnd, int x1, int y1, int x2, int y2, int spacing, int delay)
+{
+    // 检查窗口是否有效
+    if (!IsWindow(hwnd)) {
+        appendLog("窗口句柄无效", "ERROR");
+        return;
+    }
+    
+    // 确保x1 <= x2, y1 <= y2
+    if (x1 > x2) qSwap(x1, x2);
+    if (y1 > y2) qSwap(y1, y2);
+    
+    // 计算网格点数量
+    int gridWidth = (x2 - x1) / spacing + 1;
+    int gridHeight = (y2 - y1) / spacing + 1;
+    int totalPoints = gridWidth * gridHeight;
+    
+    appendLog(QString("阿罗娜来摸头啦，乖乖排好队"), "INFO");
+    
+    int clickedCount = 0;
+    
+    // 遍历Y坐标（从上到下）
+    for (int y = y1; y <= y2; y += spacing) {
+        // 检查是否需要停止
+        if (shouldStop) {
+            appendLog(QString("摸头已中断，已完成%1轮").arg(clickedCount), "WARNING");
+            return;
+        }
+        
+        // 遍历X坐标（从左到右）
+        for (int x = x1; x <= x2; x += spacing) {
+            // 检查是否需要停止
+            if (shouldStop) {
+                appendLog(QString("摸头已中断，已完成%1轮").arg(clickedCount), "WARNING");
+                return;
+            }
+            
+            // 构造lParam (x和y坐标)
+            LPARAM lParam = MAKELPARAM(x, y);
+            
+            // 发送鼠标按下和抬起消息
+            PostMessage(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, lParam);
+            delayMs(5);  // 按下和抬起之间的短暂延时
+            PostMessage(hwnd, WM_LBUTTONUP, 0, lParam);
+            
+            clickedCount++;
+            
+            // 点击间隔延时（带停止检查）
+            if (delay > 0) {
+                if (!delayMsWithCheck(delay)) {
+                    // 延时期间收到停止信号
+                    appendLog(QString("地毯式点击已中断，已完成%1/%2个点").arg(clickedCount).arg(totalPoints), "WARNING");
+                    return;
+                }
+            }
+        }
+    }
+    
+    appendLog(QString("摸头完成，共摸头%1轮").arg(clickedCount), "SUCCESS");
 }
 
 void arona::moveMouse(int x, int y)
@@ -931,8 +1620,8 @@ void arona::drag(HWND hwnd, int startX, int startY, int endX, int endY, int dura
     LPARAM startLParam = MAKELPARAM(startX, startY);
     PostMessage(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, startLParam);
     
-    appendLog(QString("开始拖动: (%1, %2) -> (%3, %4)")
-             .arg(startX).arg(startY).arg(endX).arg(endY), "INFO");
+    // appendLog(QString("开始拖动: (%1, %2) -> (%3, %4)")
+    //          .arg(startX).arg(startY).arg(endX).arg(endY), "INFO");
     
     delayMs(50);  // 等待按下消息处理
     
@@ -951,8 +1640,8 @@ void arona::drag(HWND hwnd, int startX, int startY, int endX, int endY, int dura
     LPARAM endLParam = MAKELPARAM(endX, endY);
     PostMessage(hwnd, WM_LBUTTONUP, 0, endLParam);
     
-    appendLog(QString("拖动完成: (%1, %2) -> (%3, %4)")
-             .arg(startX).arg(startY).arg(endX).arg(endY), "SUCCESS");
+    // appendLog(QString("拖动完成: (%1, %2) -> (%3, %4)")
+    //          .arg(startX).arg(startY).arg(endX).arg(endY), "SUCCESS");
 }
 
 void arona::scroll(HWND hwnd, int x, int y, int delta)
@@ -980,21 +1669,197 @@ void arona::scroll(HWND hwnd, int x, int y, int delta)
     PostMessage(hwnd, WM_MOUSEWHEEL, wParam, lParam);
     
     QString direction = (delta > 0) ? "向上" : "向下";
-    appendLog(QString("已发送滚轮消息: %1滚动%2格，坐标: (%3, %4)")
-             .arg(direction).arg(qAbs(delta)).arg(x).arg(y), "INFO");
+    // appendLog(QString("已发送滚轮消息: %1滚动%2格，坐标: (%3, %4)")
+    //          .arg(direction).arg(qAbs(delta)).arg(x).arg(y), "INFO");
 }
 
-void arona::pressKey(int vkCode, bool press)
+void arona::pressKey(HWND hwnd, int vkCode, bool press)
 {
-    // 使用keybd_event发送键盘事件
+    // 检查窗口是否有效
+    if (!IsWindow(hwnd)) {
+        appendLog("窗口句柄无效", "ERROR");
+        return;
+    }
+    
+    // 使用PostMessage发送键盘消息到指定窗口
+    if (press) {
+        // 按下键 - 发送WM_KEYDOWN消息
+        // lParam包含扫描码、重复次数等信息
+        // 这里简化处理，重复次数为1，扫描码为0
+        LPARAM lParam = 0x00000001;  // 重复次数=1, 扫描码=0, 扩展键=0, 上下文码=0, 之前状态=0, 转换状态=0
+        PostMessage(hwnd, WM_KEYDOWN, vkCode, lParam);
+        appendLog(QString("向窗口发送按键按下: VK_CODE=0x%1(%2)").arg(vkCode, 2, 16, QChar('0')).arg(vkCode), "INFO");
+    } else {
+        // 抬起键 - 发送WM_KEYUP消息
+        // lParam的bit30=1(之前按下), bit31=1(正在释放)
+        LPARAM lParam = 0xC0000001;  // 重复次数=1, 之前状态=1, 转换状态=1
+        PostMessage(hwnd, WM_KEYUP, vkCode, lParam);
+        appendLog(QString("向窗口发送按键抬起: VK_CODE=0x%1(%2)").arg(vkCode, 2, 16, QChar('0')).arg(vkCode), "INFO");
+    }
+}
+
+void arona::pressKeyGlobal(int vkCode, bool press)
+{
+    // 使用keybd_event发送全局键盘事件（不指定窗口）
+    // 注意：这会发送到当前有焦点的窗口
     if (press) {
         // 按下键
         keybd_event(vkCode, 0, 0, 0);
-        appendLog(QString("按键按下: VK_CODE=%1").arg(vkCode), "INFO");
+        // appendLog(QString("全局按键按下: VK_CODE=0x%1(%2)").arg(vkCode, 2, 16, QChar('0')).arg(vkCode), "INFO");
     } else {
         // 抬起键
         keybd_event(vkCode, 0, KEYEVENTF_KEYUP, 0);
-        appendLog(QString("按键抬起: VK_CODE=%1").arg(vkCode), "INFO");
+        // appendLog(QString("全局按键抬起: VK_CODE=0x%1(%2)").arg(vkCode, 2, 16, QChar('0')).arg(vkCode), "INFO");
     }
+}
+
+// ==================== 多窗口和定时功能实现 ====================
+
+void arona::onClearTimersButtonClicked()
+{
+    // 清空所有定时设置
+    for (int i = 0; i < 8; i++) {
+        timeCheckBoxes[i]->setChecked(false);
+        timeEdits[i]->setTime(QTime(0, 0));
+    }
+    
+    scheduledTimes.clear();
+    executedToday.clear();
+    
+    appendLog("已清空所有定时设置", "INFO");
+}
+
+void arona::updateScheduledTimes()
+{
+    // 更新定时任务列表
+    scheduledTimes.clear();
+    
+    for (int i = 0; i < 8; i++) {
+        if (timeCheckBoxes[i]->isChecked()) {
+            QTime time = timeEdits[i]->time();
+            scheduledTimes.append(time);
+        }
+    }
+    
+    // appendLog(QString("已加载%1个定时任务").arg(scheduledTimes.size()), "INFO");
+}
+
+void arona::onSchedulerTimerTimeout()
+{
+    // 每30秒检查一次是否需要执行定时任务
+    if (!enableTimerCheckBox->isChecked()) {
+        return;  // 定时功能未启用
+    }
+    
+    if (isRunning) {
+        return;  // 脚本正在运行，不重复启动
+    }
+    
+    // 更新定时任务列表
+    updateScheduledTimes();
+    
+    // 检查当前时间
+    checkAndExecuteScheduledTasks();
+}
+
+void arona::checkAndExecuteScheduledTasks()
+{
+    QTime currentTime = QTime::currentTime();
+    QString currentTimeKey = currentTime.toString("HH:mm");
+    
+    // 检查是否需要执行
+    for (const QTime &scheduledTime : scheduledTimes) {
+        QString scheduledKey = scheduledTime.toString("HH:mm");
+        
+        // 检查时间是否匹配（精确到分钟）
+        if (scheduledKey == currentTimeKey) {
+            // 检查今天是否已经执行过
+            if (executedToday.contains(scheduledKey)) {
+                continue;  // 今天已经执行过这个时间点的任务
+            }
+            
+            // 记录已执行
+            executedToday.insert(scheduledKey);
+            
+            // 执行脚本
+            appendLog(QString("========== 定时任务触发: %1 ==========").arg(scheduledKey), "WARNING");
+            startScript();
+            
+            return;  // 一次只执行一个任务
+        }
+    }
+    
+    // 如果是新的一天（00:00），清空执行记录
+    // if (currentTimeKey == "00:00") {
+    //     executedToday.clear();
+    //     appendLog("新的一天开始，定时任务记录已重置", "INFO");
+    // }
+}
+
+void arona::executeAllWindows()
+{
+    // 依次对所有窗口执行脚本
+    appendLog("========== 开始多窗口执行 ==========", "INFO");
+    
+    int validHandleCount = 0;
+    for (int i = 0; i < 3; i++) {
+        if (gameHandles[i] != NULL && IsWindow(gameHandles[i])) {
+            validHandleCount++;
+        }
+    }
+    
+    if (validHandleCount == 0) {
+        appendLog("没有有效的游戏窗口句柄", "ERROR");
+        isRunning = false;
+        updateStartButtonState();
+        return;
+    }
+    
+    appendLog(QString("找到%1个有效窗口，开始依次执行").arg(validHandleCount), "INFO");
+    
+    // 依次执行每个窗口
+    for (int i = 0; i < 3; i++) {
+        if (shouldStop) {
+            appendLog("========== 脚本已停止 ==========", "WARNING");
+            isRunning = false;
+            updateStartButtonState();
+            return;
+        }
+        
+        HWND hwnd = gameHandles[i];
+        if (hwnd == NULL || !IsWindow(hwnd)) {
+            continue;  // 跳过无效句柄
+        }
+        
+        currentHandleIndex = i;
+        appendLog(QString("---------- 正在处理窗口%1 ----------").arg(i + 1), "INFO");
+        
+        // 临时设置handleLineEdit以兼容现有代码
+        qint64 handleValue = reinterpret_cast<qint64>(hwnd);
+        QString oldHandleText = handleLineEdit->text();
+        handleLineEdit->setText(QString::number(handleValue));
+        
+        // 执行脚本主逻辑
+        executeScript();
+        
+        // 恢复原始handleLineEdit
+        handleLineEdit->setText(oldHandleText);
+        
+        if (shouldStop) {
+            break;
+        }
+        
+        // 窗口之间延时
+        if (i < 2 && !shouldStop) {
+            appendLog("等待进入下一个窗口...", "INFO");
+            if (!delayMsWithCheck(5000)) {
+                break;
+            }
+        }
+    }
+    
+    appendLog("========== 多窗口执行完成 ==========", "SUCCESS");
+    isRunning = false;
+    updateStartButtonState();
 }
 

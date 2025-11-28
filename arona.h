@@ -33,6 +33,11 @@
 #include <QLabel>
 #include <QGroupBox>
 #include <QFrame>
+#include <QCheckBox>
+#include <QTimeEdit>
+#include <QTime>
+#include <QVector>
+#include <QSet>
 
 class arona : public QMainWindow
 {
@@ -44,6 +49,11 @@ public:
 
     // 日志输出系统
     void appendLog(const QString &message, const QString &level = "INFO");
+    
+    // 按钮位置常量
+    static const QPoint BUTTON_HALL_TO_CAFE1;
+    static const QPoint BUTTON_CAFE1_TO_CAFE2;
+    static const QPoint BUTTON_CAFE2_TO_CAFE1;
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
@@ -53,10 +63,14 @@ protected:
 
 private slots:
     void onCaptureHandleButtonPressed();
+    void onCaptureHandle2ButtonPressed();
+    void onCaptureHandle3ButtonPressed();
     void onSelectBgButtonClicked();
     void onDebugButtonClicked();
     void onstartButtonClicked();
     void onDebugTypeChanged(int index);
+    void onSchedulerTimerTimeout();
+    void onClearTimersButtonClicked();
 
 private:
     // UI控件
@@ -69,8 +83,21 @@ private:
     QPushButton *selectBgButton;
     QPushButton *startButton;
     QLineEdit *handleLineEdit;
+    QLineEdit *handleLineEdit2;
+    QLineEdit *handleLineEdit3;
+    QPushButton *captureHandleButton2;
+    QPushButton *captureHandleButton3;
     QTextEdit *logTextEdit;
     QMenuBar *menubar;
+    
+    // 定时功能控件
+    QGroupBox *timerGroupBox;
+    QCheckBox *enableTimerCheckBox;
+    QWidget *timerListWidget;
+    QVBoxLayout *timerListLayout;
+    QTimeEdit *timeEdits[8];
+    QCheckBox *timeCheckBoxes[8];
+    QPushButton *clearTimersButton;
     
 #if DEBUG_MODE
     // 调试功能控件
@@ -84,6 +111,9 @@ private:
     QHBoxLayout *clickDebugLayout;
     QLabel *xLabel;
     QLabel *yLabel;
+    QWidget *keyDebugWidget;
+    QComboBox *keySelectComboBox;
+    QHBoxLayout *keyDebugLayout;
 #endif
     
     // 布局
@@ -97,9 +127,21 @@ private:
     
     // 其他成员变量
     bool isCapturingHandle;
+    int capturingHandleIndex;  // 正在抓取的句柄索引（1, 2, 3）
     bool waitingForMouseRelease;  // 等待鼠标释放状态
+    bool isRunning;  // 脚本是否正在运行
+    bool shouldStop;  // 是否应该停止脚本
     QTimer *captureTimer;
+    QTimer *schedulerTimer;  // 定时检查计时器
     QPixmap backgroundPixmap;  // 背景图片
+
+    // 多窗口句柄
+    QVector<HWND> gameHandles;  // 存储最多3个游戏窗口句柄
+    int currentHandleIndex;  // 当前正在处理的句柄索引
+    
+    // 定时任务
+    QVector<QTime> scheduledTimes;  // 定时执行的时间列表
+    QSet<QString> executedToday;  // 今天已执行的时间（避免重复）
 
     // 位置模板哈希值
     QHash<QString, QString> positionTemplates;
@@ -107,25 +149,50 @@ private:
     // 辅助函数
     void setupUi();
     void setBackgroundImage(const QString &imagePath);
-    void captureWindowHandle();
+    void captureWindowHandle(int handleIndex);
     QImage captureWindow(HWND hwnd);
     QString calculateImageHash(const QImage& image, const QRect& roi = QRect());
     void loadPositionTemplates();
     QString recognizeCurrentPosition(QImage screenshot);
+    void updateScheduledTimes();
+    void checkAndExecuteScheduledTasks();
+    void executeAllWindows();
     
     // 工具函数
     void delayMs(int milliseconds);  // 无阻塞延时
+    bool delayMsWithCheck(int milliseconds);  // 带停止检查的延时，返回false表示需要停止
     void click(HWND hwnd, int x, int y);  // 模拟点击
+    void clickGrid(HWND hwnd, int x1, int y1, int x2, int y2, int spacing = 50, int delay = 20);  // 地毯式点击
     void moveMouse(int x, int y);  // 移动真实鼠标到屏幕坐标
     void moveMouseToWindow(HWND hwnd, int x, int y);  // 移动真实鼠标到窗口坐标
     void drag(HWND hwnd, int startX, int startY, int endX, int endY, int duration = 500);  // 拖动
     void scroll(HWND hwnd, int x, int y, int delta);  // 模拟滚轮 (delta>0向上滚, delta<0向下滚)
-    void pressKey(int vkCode, bool press);  // 按键控制 (press=true按下, press=false抬起)
+    void pressKey(HWND hwnd, int vkCode, bool press);  // 按键控制 (press=true按下, press=false抬起)
+    void pressKeyGlobal(int vkCode, bool press);  // 全局按键控制（不需要窗口句柄）
+    
+    // 脚本控制函数
+    void startScript();  // 启动脚本
+    void stopScript();  // 停止脚本
+    void updateStartButtonState();  // 更新启动按钮状态
+    void executeScript();  // 执行脚本主逻辑
+    
+    // 业务逻辑函数
+    void enterCafe1FromHall(HWND hwnd);
+    void enterCafe2FromCafe1(HWND hwnd);
+    void enterCafe1FromCafe2(HWND hwnd);
+    
+    // 辅助逻辑函数（封装重复逻辑）
+    bool waitForPosition(HWND hwnd, const QString &targetPosition, int maxRetries, int delayMs, int clickX, int clickY);
+    bool adjustCafeView(HWND hwnd, int scrollX, int scrollY, int scrollCount = 12);
+    void adjustCafePosition(HWND hwnd);
+    void patStudents(HWND hwnd, int rounds = 3);
+    void closeGameWindow(HWND hwnd);
     
 #if DEBUG_MODE
     // 调试功能函数
     void screenshotDebug();
     void clickDebug();
+    void keyDebug();
 #endif
 };
 #endif // ARONA_H
