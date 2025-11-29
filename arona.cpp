@@ -22,6 +22,7 @@
 const QPoint arona::BUTTON_HALL_TO_CAFE1 = QPoint(118, 960);
 const QPoint arona::BUTTON_CAFE1_TO_CAFE2 = QPoint(230, 134);
 const QPoint arona::BUTTON_CAFE2_TO_CAFE1 = QPoint(230, 134);
+const QPoint arona::BUTTON_INVITATION_TICKET = QPoint(1310, 953);
 
 arona::arona(QWidget *parent)
     : QMainWindow(parent)
@@ -55,6 +56,9 @@ arona::arona(QWidget *parent)
 
     // 加载位置模板
     loadPositionTemplates();
+
+    // 加载邀请券模板
+    loadpositionReadyTemplates();
     
     // 创建定时器用于检查定时任务
     schedulerTimer = new QTimer(this);
@@ -849,6 +853,28 @@ void arona::loadPositionTemplates()
     }
 }
 
+void arona::loadpositionReadyTemplates()
+{
+    positionReadyTemplates.clear();
+
+    // 加载位置就绪模板
+    QDir dir(":/images/position_ready");
+    if (!dir.exists()) {
+        appendLog("位置就绪模板目录不存在", "ERROR");
+        return;
+    }
+    QStringList files = dir.entryList(QDir::Files);
+    foreach (QString file, files) {
+        QString filePath = dir.filePath(file);
+        QImage image = QImage(filePath);
+        QString hash = calculateImageHash(image);
+        QString fileName = file.split(".").first();
+        positionReadyTemplates.insert(fileName, hash);
+    }
+
+    appendLog(QString("位置就绪模板加载完成，共加载%1个模板").arg(positionReadyTemplates.size()), "SUCCESS");
+}
+
 QString arona::recognizeCurrentPosition(QImage screenshot)
 {
     // 循环遍历所有的位置模板
@@ -928,6 +954,252 @@ void arona::enterCafe1FromCafe2(HWND hwnd)
 {
     // 从咖啡厅2进入大厅
     click(hwnd, BUTTON_CAFE2_TO_CAFE1.x(), BUTTON_CAFE2_TO_CAFE1.y());
+}
+
+void arona::inviteStudetToCafe(HWND hwnd, QList<int> studentNumbers)
+{
+    // 邀请学生进入咖啡厅
+    // 点击邀请券，打开邀请界面
+    click(hwnd, BUTTON_INVITATION_TICKET.x(), BUTTON_INVITATION_TICKET.y());
+    
+    // 等待邀请界面就绪
+    int retries = 50;
+    while (retries > 0) {
+        delayMs(100);
+        QImage screenshot = captureWindow(hwnd);
+        if (isPositionReady(screenshot, INVITATION_INTERFACE_ROI)) {
+            break;
+        }
+        if (shouldStop) {
+            appendLog("========== 脚本已停止 ==========", "WARNING");
+            isRunning = false;
+            updateStartButtonState();
+            return;
+        }
+        retries--;
+    }
+
+    if (retries <= 0) {
+        appendLog("邀请界面未就绪，超时退出", "WARNING");
+        isRunning = false;
+        updateStartButtonState();
+        return;
+    }
+
+    // 查找对应学生
+    
+    return;
+}
+
+int arona::findStudentInInvitationInterface(QImage image, QString studentName)
+{
+    // 查找对应学生
+    // 从(1100, 280)开始向下搜索#77DEFF颜色
+    int studentIndex = 1;
+    const int searchX = 1100;
+    const int captureX = 732;
+    const int startY = 280;
+    const int maxY = 830;
+    const int studentHeight = 36;
+    const int studentWidth = 128;
+    const int verticalSpacing = 110; // 从当前y位置向下110像素继续搜索
+    const int yOffset = 7;           // 找到标记后，向下偏移7像素截取头像
+
+    // 目标颜色 #77DEFF (RGB: 119, 222, 255)
+    QRgb targetColor = qRgb(119, 222, 255);
+
+    int currentY = startY;
+    int foundCount = 0;
+
+    appendLog("开始搜索学生头像标记...", "INFO");
+    
+    // 加载学生模板图片
+    QString templatePath = QString(":/images/student_avatar/%1.png").arg(studentName);
+    QImage templateImage(templatePath);
+    
+    if (templateImage.isNull()) {
+        appendLog(QString("无法加载学生模板图片: %1").arg(templatePath), "ERROR");
+        return 0;
+    }
+    
+    appendLog(QString("已加载学生模板: %1, 尺寸: %2x%3")
+             .arg(studentName)
+             .arg(templateImage.width())
+             .arg(templateImage.height()), "INFO");
+
+    while (currentY <= maxY)
+    {
+        // 检查图像边界
+        if (currentY < 0 || currentY >= image.height() || searchX >= image.width())
+        {
+            break;
+        }
+
+        // 检查(searchX, currentY)位置的颜色
+        QRgb pixelColor = image.pixel(searchX, currentY);
+
+        // 如果找到目标颜色
+        if (pixelColor == targetColor)
+        {
+            // 向下检查连续67个像素是否都是#77DEFF
+            bool allMatch = true;
+            for (int i = 1; i <= 67; i++)
+            {
+                if (currentY + i >= image.height())
+                {
+                    allMatch = false;
+                    break;
+                }
+                QRgb checkColor = image.pixel(searchX, currentY + i);
+                if (checkColor != targetColor)
+                {
+                    allMatch = false;
+                    break;
+                }
+            }
+
+            // 如果连续67个像素都匹配
+            if (allMatch)
+            {
+                foundCount++;
+
+                // 计算截取位置
+                int captureY = currentY - yOffset;
+
+                // 检查截取区域是否在图像范围内
+                if (captureY >= 0 && captureY + studentHeight <= image.height() &&
+                    captureX >= 0 && captureX + studentWidth <= image.width())
+                {
+
+                    // 截取128x36像素的学生头像
+                    QImage studentImg = image.copy(captureX, captureY, studentWidth, studentHeight);
+                    QString studentPath = QString("screenshots/student_avatar%1.png").arg(studentIndex);
+
+                    // 保存截图用于调试
+                    if (studentImg.save(studentPath))
+                    {
+                        appendLog(QString("已保存student_avatar_%1: 标记位置(%2, %3), 截取位置(%2, %4)")
+                                      .arg(studentIndex)
+                                      .arg(searchX)
+                                      .arg(currentY)
+                                      .arg(captureY),
+                                  "INFO");
+                        studentIndex++;
+                    }
+
+                    // 使用逐像素对比奇数行
+                    if (compareImagesByOddRows(studentImg, templateImage)) {
+                        appendLog(QString("找到匹配的学生: %1").arg(studentName), "SUCCESS");
+                        return currentY;
+                    } else {
+                        appendLog(QString("学生头像不匹配: %1").arg(studentName), "INFO");
+                    }
+                }
+
+                // 从当前位置向下110像素继续搜索
+                currentY += verticalSpacing;
+            }
+            else
+            {
+                // 如果不是连续67个像素都匹配，继续向下搜索
+                currentY++;
+            }
+        }
+        else
+        {
+            // 颜色不匹配，继续向下搜索
+            currentY++;
+        }
+    }
+
+    return 0;
+}
+
+bool arona::compareImagesByOddRows(const QImage &image1, const QImage &image2)
+{
+    // 逐像素对比两张图片的奇数行
+    // 只对比奇数行的所有像素，允许RGB分量各有±5的误差
+    
+    // 检查图片尺寸是否相同
+    if (image1.width() != image2.width() || image1.height() != image2.height()) {
+        appendLog(QString("图片尺寸不匹配: (%1x%2) vs (%3x%4)")
+                 .arg(image1.width()).arg(image1.height())
+                 .arg(image2.width()).arg(image2.height()), "WARNING");
+        return false;
+    }
+    
+    int width = image1.width();
+    int height = image1.height();
+    int comparedPixels = 0;
+    int mismatchedPixels = 0;
+    const int tolerance = 50;  // RGB分量允许的最大误差
+    
+    // 遍历所有奇数行（第1, 3, 5, 7...行，索引为0, 2, 4, 6...）
+    for (int y = 0; y < height; y += 2) {
+        // 遍历该行的所有像素
+        for (int x = 0; x < width; x++) {
+            QRgb pixel1 = image1.pixel(x, y);
+            QRgb pixel2 = image2.pixel(x, y);
+            
+            comparedPixels++;
+            
+            // 提取RGB分量
+            int r1 = qRed(pixel1);
+            int g1 = qGreen(pixel1);
+            int b1 = qBlue(pixel1);
+            
+            int r2 = qRed(pixel2);
+            int g2 = qGreen(pixel2);
+            int b2 = qBlue(pixel2);
+            
+            // 计算RGB分量的差异
+            int rDiff = qAbs(r1 - r2);
+            int gDiff = qAbs(g1 - g2);
+            int bDiff = qAbs(b1 - b2);
+            
+            // 检查每个分量的差异是否在容差范围内
+            if (rDiff > tolerance || gDiff > tolerance || bDiff > tolerance) {
+                mismatchedPixels++;
+                // 如果有任何一个像素的RGB分量超出容差范围，立即返回false
+                appendLog(QString("像素不匹配: 位置(%1,%2), RGB1=(%3,%4,%5), RGB2=(%6,%7,%8), 差异=(%9,%10,%11)")
+                         .arg(x).arg(y)
+                         .arg(r1).arg(g1).arg(b1)
+                         .arg(r2).arg(g2).arg(b2)
+                         .arg(rDiff).arg(gDiff).arg(bDiff), "DEBUG");
+                return false;
+            }
+        }
+    }
+    
+    appendLog(QString("图片匹配成功: 对比了%1个像素（奇数行），全部在容差范围内（±%2）").arg(comparedPixels).arg(tolerance), "SUCCESS");
+    return true;
+}
+
+bool arona::isPositionReady(QImage screenshot, QRect roi)
+{
+    // 检查位置是否就绪
+    QImage positionReady = screenshot.copy(roi);
+    // 保存截图
+    QString timestamp = QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss");
+    QString screenshotPath = "screenshots/position_ready_" + timestamp + ".png";
+    if (positionReady.save(screenshotPath)) {
+        appendLog(QString("已保存位置就绪截图: %1").arg(screenshotPath), "SUCCESS");
+    }
+    else {
+        appendLog("保存位置就绪截图失败", "ERROR");
+    }
+    QString hash = calculateImageHash(positionReady);
+    if (positionReadyTemplates.values().contains(hash)) {
+        qDebug() << "位置就绪,键: " << positionReadyTemplates.key(hash);
+        return true;
+    }
+
+    // 打印哈希值
+    // qDebug() << "位置就绪哈希值: " << hash;
+    // for (auto it = positionReadyTemplates.begin(); it != positionReadyTemplates.end(); ++it) {
+    //     qDebug() << "位置就绪模板键: " << it.key() << " 哈希值: " << it.value();
+    // }
+    return false;
 }
 
 // ==================== 辅助逻辑函数实现（封装重复逻辑） ====================
@@ -1142,22 +1414,103 @@ void arona::screenshotDebug()
         return;
     }
     
-    // 保存截图
-    QString timestamp = QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss");
-    QString screenshotPath = QString("screenshot_%1.png").arg(timestamp);
-    
     // 创建screenshots目录
     QDir dir;
     if (!dir.exists("screenshots")) {
         dir.mkdir("screenshots");
     }
     
-    screenshotPath = "screenshots/" + screenshotPath;
+    // ==================== 新增功能：自动截取学生头像 ====================
+    
+    // 从(1100, 280)开始向下搜索#77DEFF颜色
+    int studentIndex = 1;
+    const int searchX = 1100;
+    const int captureX = 732;
+    const int startY = 280;
+    const int maxY = 830;
+    const int studentHeight = 36;
+    const int studentWidth = 128;
+    const int verticalSpacing = 110;  // 从当前y位置向下110像素继续搜索
+    const int yOffset = 7;  // 找到标记后，向上偏移7像素截取头像
+    
+    // 目标颜色 #77DEFF (RGB: 119, 222, 255)
+    QRgb targetColor = qRgb(119, 222, 255);
+    
+    int currentY = startY;
+    int foundCount = 0;
+    
+    appendLog("开始搜索学生头像标记...", "INFO");
+    
+    while (currentY <= maxY) {
+        // 检查图像边界
+        if (currentY < 0 || currentY >= image.height() || searchX >= image.width()) {
+            break;
+        }
+        
+        // 检查(searchX, currentY)位置的颜色
+        QRgb pixelColor = image.pixel(searchX, currentY);
+        
+        // 如果找到目标颜色
+        if (pixelColor == targetColor) {
+            // 向下检查连续67个像素是否都是#77DEFF
+            bool allMatch = true;
+            for (int i = 1; i <= 67; i++) {
+                if (currentY + i >= image.height()) {
+                    allMatch = false;
+                    break;
+                }
+                QRgb checkColor = image.pixel(searchX, currentY + i);
+                if (checkColor != targetColor) {
+                    allMatch = false;
+                    break;
+                }
+            }
+            
+            // 如果连续67个像素都匹配
+            if (allMatch) {
+                foundCount++;
+                
+                // 计算截取位置
+                int captureY = currentY - yOffset;
+                
+                // 检查截取区域是否在图像范围内
+                if (captureY >= 0 && captureY + studentHeight <= image.height() &&
+                    captureX >= 0 && captureX + studentWidth <= image.width()) {
+                    
+                    // 截取128x40像素的学生头像
+                    QImage studentImg = image.copy(captureX, captureY, studentWidth, studentHeight);
+                    QString studentPath = QString("screenshots/student%1.png").arg(studentIndex);
+                    
+                    if (studentImg.save(studentPath)) {
+                        appendLog(QString("已保存student%1: 标记位置(650, %2), 截取位置(650, %3)")
+                                 .arg(studentIndex).arg(currentY).arg(captureY), "SUCCESS");
+                        studentIndex++;
+                    } else {
+                        appendLog(QString("保存student%1失败").arg(studentIndex), "ERROR");
+                    }
+                }
+                
+                // 从当前位置向下110像素继续搜索
+                currentY += verticalSpacing;
+            } else {
+                // 如果不是连续67个像素都匹配，继续向下搜索
+                currentY++;
+            }
+        } else {
+            // 颜色不匹配，继续向下搜索
+            currentY++;
+        }
+    }
+    
+    appendLog(QString("学生头像搜索完成，共找到%1个标记，保存了%2张头像")
+             .arg(foundCount).arg(studentIndex - 1), "SUCCESS");
+    
+    // ==================== 保存完整截图（可选） ====================
+    QString timestamp = QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss");
+    QString screenshotPath = QString("screenshots/fullscreen_%1.png").arg(timestamp);
     
     if (image.save(screenshotPath)) {
-        appendLog(QString("截图成功保存: %1").arg(screenshotPath), "SUCCESS");
-    } else {
-        appendLog("保存截图失败", "ERROR");
+        appendLog(QString("完整截图已保存: %1").arg(screenshotPath), "INFO");
     }
 }
 
@@ -1389,8 +1742,7 @@ void arona::executeScript()
         return;
     }
 
-    // ==================== 启动游戏并进入大厅 ====================
-    click(hwnd, 1450, 200);
+    // ==================== 等待进入大厅 ====================
     if (!waitForPosition(hwnd, "Hall", 20, 4000, 120, 640)) {
         return;  // 进入失败，已在函数内处理
     }
@@ -1401,6 +1753,25 @@ void arona::executeScript()
     // 进入咖啡厅1
     enterCafe1FromHall(hwnd);
     if (!waitForPosition(hwnd, "Cafe1", 10, 1500, 150, 1045)) {
+        return;
+    }
+
+    // 检查邀请券是否就绪
+    // QImage screenshot = captureWindow(hwnd);
+    // if (isPositionReady(screenshot, INVITATION_TICKET_ROI)) {
+    //     appendLog("邀请券就绪", "SUCCESS");
+
+    //     // 邀请学生
+    //     inviteStudetToCafe(hwnd, QList() << 1 << 2 << 3);
+    // }
+    // else {
+    //     appendLog("邀请券未就绪", "WARNING");
+    //     return;
+    // }
+
+    if (!isRunning) {
+        appendLog("========== 脚本已停止 ==========", "WARNING");
+        updateStartButtonState();
         return;
     }
     
@@ -1805,6 +2176,8 @@ void arona::executeAllWindows()
     for (int i = 0; i < 3; i++) {
         if (gameHandles[i] != NULL && IsWindow(gameHandles[i])) {
             validHandleCount++;
+            // 启动游戏
+            click(gameHandles[i], 1450, 200);
         }
     }
     

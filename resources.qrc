@@ -1,9 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <RCC>
     <qresource prefix="/">
         <file>images/background.jpg</file>
+        <file>images/position_ready/(1310,953)ticket.png</file>
+        <file>images/position_ready/(623,125)Invitation_interface.png</file>
         <file>images/position_templates/(118,960)Hall.png</file>
         <file>images/position_templates/(230,134)Cafe1.png</file>
         <file>images/position_templates/(230,134)Cafe2.png</file>
+        <file>images/student_avatar/亚子.png</file>
+        <file>images/student_avatar/亚子（礼服）.png</file>
+        <file>images/student_avatar/伊织.png</file>
+        <file>images/student_avatar/优香.png</file>
+        <file>images/student_avatar/优香（体操服）.png</file>
+        <file>images/student_avatar/佐天泪子.png</file>
+        <file>images/student_avatar/佳代子（新年）.png</file>
+        <file>images/student_avatar/佳代子（礼服）.png</file>
+        <file>images/student_avatar/初音未来.png</file>
+        <file>images/student_avatar/和纱（乐队）.png</file>
+        <file>images/student_avatar/咲.png</file>
+        <file>images/student_avatar/好美（乐队）.png</file>
+        <file>images/student_avatar/宫子.png</file>
+        <file>images/student_avatar/宫子（泳装）.png</file>
+        <file>images/student_avatar/御坂美琴.png</file>
+        <file>images/student_avatar/心奈.png</file>
+        <file>images/student_avatar/日奈.png</file>
+        <file>images/student_avatar/日奈（泳装）.png</file>
+        <file>images/student_avatar/日奈（礼服）.png</file>
+        <file>images/student_avatar/日鞠.png</file>
+        <file>images/student_avatar/星野.png</file>
+        <file>images/student_avatar/星野（泳装）.png</file>
+        <file>images/student_avatar/晴奈（新年）.png</file>
+        <file>images/student_avatar/晴（露营）.png</file>
+        <file>images/student_avatar/未花.png</file>
+        <file>images/student_avatar/泉奈.png</file>
+        <file>images/student_avatar/泉奈（泳装）.png</file>
+        <file>images/student_avatar/渚.png</file>
+        <file>images/student_avatar/爱丽丝.png</file>
+        <file>images/student_avatar/爱丽丝（女仆）.png</file>
+        <file>images/student_avatar/爱露（礼服）.png</file>
+        <file>images/student_avatar/玛丽（体操服）.png</file>
+        <file>images/student_avatar/白子（泳装）.png</file>
+        <file>images/student_avatar/白子（骑行）.png</file>
+        <file>images/student_avatar/瞬.png</file>
+        <file>images/student_avatar/花子（泳装）.png</file>
+        <file>images/student_avatar/芹香.png</file>
+        <file>images/student_avatar/若藻.png</file>
+        <file>images/student_avatar/若藻（泳装）.png</file>
+        <file>images/student_avatar/萌绘.png</file>
+        <file>images/student_avatar/诺亚.png</file>
+        <file>images/student_avatar/风香（新年）.png</file>
+        <file>images/student_avatar/食蜂操祈.png</file>
     </qresource>
 </RCC>
 

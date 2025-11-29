@@ -54,6 +54,7 @@ public:
     static const QPoint BUTTON_HALL_TO_CAFE1;
     static const QPoint BUTTON_CAFE1_TO_CAFE2;
     static const QPoint BUTTON_CAFE2_TO_CAFE1;
+    static const QPoint BUTTON_INVITATION_TICKET;
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
@@ -66,11 +67,14 @@ private slots:
     void onCaptureHandle2ButtonPressed();
     void onCaptureHandle3ButtonPressed();
     void onSelectBgButtonClicked();
-    void onDebugButtonClicked();
     void onstartButtonClicked();
-    void onDebugTypeChanged(int index);
     void onSchedulerTimerTimeout();
     void onClearTimersButtonClicked();
+
+#if DEBUG_MODE
+    void onDebugButtonClicked();
+    void onDebugTypeChanged(int index);
+#endif  
 
 private:
     // UI控件
@@ -145,6 +149,13 @@ private:
 
     // 位置模板哈希值
     QHash<QString, QString> positionTemplates;
+
+    // 位置就绪模板哈希值
+    QHash<QString, QString> positionReadyTemplates;
+
+    // 邀请券区域
+    const QRect INVITATION_TICKET_ROI = QRect(1310, 953, 36, 36);
+    const QRect INVITATION_INTERFACE_ROI = QRect(623, 125, 36, 36);
     
     // 辅助函数
     void setupUi();
@@ -153,10 +164,12 @@ private:
     QImage captureWindow(HWND hwnd);
     QString calculateImageHash(const QImage& image, const QRect& roi = QRect());
     void loadPositionTemplates();
+    void loadpositionReadyTemplates();
     QString recognizeCurrentPosition(QImage screenshot);
     void updateScheduledTimes();
     void checkAndExecuteScheduledTasks();
     void executeAllWindows();
+    bool isPositionReady(QImage screenshot, QRect roi);
     
     // 工具函数
     void delayMs(int milliseconds);  // 无阻塞延时
@@ -180,6 +193,9 @@ private:
     void enterCafe1FromHall(HWND hwnd);
     void enterCafe2FromCafe1(HWND hwnd);
     void enterCafe1FromCafe2(HWND hwnd);
+    void inviteStudetToCafe(HWND hwnd, QList<int> studentNumbers);
+    int findStudentInInvitationInterface(QImage image, QString studentName);
+    bool compareImagesByOddRows(const QImage &image1, const QImage &image2);  // 逐像素对比奇数行
     
     // 辅助逻辑函数（封装重复逻辑）
     bool waitForPosition(HWND hwnd, const QString &targetPosition, int maxRetries, int delayMs, int clickX, int clickY);
