@@ -34,6 +34,7 @@ arona::arona(QWidget *parent)
     , captureTimer(nullptr)
     , schedulerTimer(nullptr)
     , currentHandleIndex(0)
+    , timerEnabled(false)
 {
     setupUi();
     
@@ -42,6 +43,9 @@ arona::arona(QWidget *parent)
     for (int i = 0; i < 3; i++) {
         gameHandles[i] = NULL;
     }
+    
+    // 创建定时设置对话框
+    timerDialog = new TimerDialog(this);
     
     // 设置默认背景图片
     setBackgroundImage(":/images/background.jpg");
@@ -52,7 +56,7 @@ arona::arona(QWidget *parent)
     connect(captureHandleButton3, &QPushButton::pressed, this, &arona::onCaptureHandle3ButtonPressed);
     connect(selectBgButton, &QPushButton::clicked, this, &arona::onSelectBgButtonClicked);
     connect(startButton, &QPushButton::clicked, this, &arona::onstartButtonClicked);
-    connect(clearTimersButton, &QPushButton::clicked, this, &arona::onClearTimersButtonClicked);
+    connect(timerSettingsButton, &QPushButton::clicked, this, &arona::onTimerSettingsButtonClicked);
 
     // 加载位置模板
     loadPositionTemplates();
@@ -255,85 +259,24 @@ void arona::setupUi()
     selectBgButton->setText("选择背景图");
     verticalLayout_3->addWidget(selectBgButton);
     
-    // ==================== 定时功能区 ====================
-    timerGroupBox = new QGroupBox("定时执行", area3);
-    timerGroupBox->setStyleSheet("QGroupBox { "
-                                "border: 2px solid #FF9800; "
-                                "border-radius: 5px; "
-                                "margin-top: 10px; "
-                                "padding-top: 10px; "
-                                "font-weight: bold; "
-                                "color: #FF9800; "
-                                "} "
-                                "QGroupBox::title { "
-                                "subcontrol-origin: margin; "
-                                "subcontrol-position: top center; "
-                                "padding: 0 5px; "
-                                "background-color: white; "
-                                "}");
-    
-    QVBoxLayout *timerLayout = new QVBoxLayout(timerGroupBox);
-    timerLayout->setSpacing(5);
-    timerLayout->setContentsMargins(8, 15, 8, 8);
-    
-    // 启用定时复选框
-    enableTimerCheckBox = new QCheckBox("启用定时执行", timerGroupBox);
-    enableTimerCheckBox->setStyleSheet("QCheckBox { font-weight: normal; color: #333; }");
-    timerLayout->addWidget(enableTimerCheckBox);
-    
-    // 时间列表容器
-    timerListWidget = new QWidget(timerGroupBox);
-    timerListLayout = new QVBoxLayout(timerListWidget);
-    timerListLayout->setSpacing(3);
-    timerListLayout->setContentsMargins(0, 0, 0, 0);
-    
-    // 创建8个时间选择器
-    for (int i = 0; i < 8; i++) {
-        QHBoxLayout *timeRowLayout = new QHBoxLayout();
-        timeRowLayout->setSpacing(5);
-        
-        timeCheckBoxes[i] = new QCheckBox(timerListWidget);
-        timeCheckBoxes[i]->setStyleSheet("QCheckBox { font-weight: normal; }");
-        timeRowLayout->addWidget(timeCheckBoxes[i]);
-        
-        timeEdits[i] = new QTimeEdit(timerListWidget);
-        timeEdits[i]->setDisplayFormat("HH:mm");
-        timeEdits[i]->setTime(QTime(0, 0));
-        timeEdits[i]->setStyleSheet("QTimeEdit { "
-                                   "border: 1px solid #FF9800; "
-                                   "border-radius: 3px; "
-                                   "padding: 2px; "
-                                   "background-color: white; "
-                                   "font-weight: normal; "
-                                   "}");
-        timeRowLayout->addWidget(timeEdits[i]);
-        
-        timerListLayout->addLayout(timeRowLayout);
-    }
-    
-    timerLayout->addWidget(timerListWidget);
-    
-    // 清空定时按钮
-    clearTimersButton = new QPushButton("清空所有定时", timerGroupBox);
-    clearTimersButton->setMinimumHeight(25);
-    clearTimersButton->setStyleSheet("QPushButton { "
-                                    "background-color: rgba(255, 152, 0, 150); "
-                                    "color: white; "
-                                    "border: 1px solid rgba(255, 152, 0, 255); "
-                                    "border-radius: 3px; "
-                                    "font-weight: bold; "
-                                    "font-size: 9pt; "
-                                    "padding: 3px; "
-                                    "} "
-                                    "QPushButton:hover { "
-                                    "background-color: rgba(255, 152, 0, 200); "
-                                    "} "
-                                    "QPushButton:pressed { "
-                                    "background-color: rgba(245, 124, 0, 255); "
-                                    "}");
-    timerLayout->addWidget(clearTimersButton);
-    
-    verticalLayout_3->addWidget(timerGroupBox);
+    // ==================== 定时功能按钮 ====================
+    timerSettingsButton = new QPushButton("定时功能", area3);
+    timerSettingsButton->setMinimumSize(QSize(0, 35));
+    timerSettingsButton->setStyleSheet("QPushButton { "
+                                      "background-color: rgba(255, 152, 0, 200); "
+                                      "color: white; "
+                                      "border: 2px solid rgba(255, 152, 0, 255); "
+                                      "border-radius: 5px; "
+                                      "font-weight: bold; "
+                                      "padding: 5px; "
+                                      "} "
+                                      "QPushButton:hover { "
+                                      "background-color: #FF9800; "
+                                      "} "
+                                      "QPushButton:pressed { "
+                                      "background-color: #F57C00; "
+                                      "}");
+    verticalLayout_3->addWidget(timerSettingsButton);
     
 #if DEBUG_MODE
     // ==================== 调试功能区 ====================
@@ -971,7 +914,7 @@ void arona::inviteStudetToCafe(HWND hwnd, QList<int> studentNumbers)
             break;
         }
         if (shouldStop) {
-            appendLog("========== 脚本已停止 ==========", "WARNING");
+            appendLog("========== 脚本已停止 ==========917", "WARNING");
             isRunning = false;
             updateStartButtonState();
             return;
@@ -1213,7 +1156,7 @@ bool arona::waitForPosition(HWND hwnd, const QString &targetPosition, int maxRet
     {
         // 检查是否需要停止
         if (shouldStop) {
-            appendLog("========== 脚本已停止 ==========", "WARNING");
+            appendLog("========== 脚本已停止 ==========1159", "WARNING");
             isRunning = false;
             updateStartButtonState();
             return false;
@@ -1233,7 +1176,7 @@ bool arona::waitForPosition(HWND hwnd, const QString &targetPosition, int maxRet
         
         // 延时并检查停止信号
         if (!delayMsWithCheck(delayMs)) {
-            appendLog("========== 脚本已停止 ==========", "WARNING");
+            appendLog("========== 脚本已停止 ==========1179", "WARNING");
             isRunning = false;
             updateStartButtonState();
             return false;
@@ -1263,8 +1206,8 @@ bool arona::adjustCafeView(HWND hwnd, int scrollX, int scrollY, int scrollCount)
     pressKeyGlobal(VK_CONTROL, 1);
     
     if (!delayMsWithCheck(500)) {
-        pressKeyGlobal(VK_CONTROL, 0);
-        appendLog("========== 脚本已停止 ==========", "WARNING");
+        // pressKeyGlobal(VK_CONTROL, 0);
+        appendLog("========== 脚本已停止 ==========1210", "WARNING");
         isRunning = false;
         updateStartButtonState();
         return false;
@@ -1274,8 +1217,8 @@ bool arona::adjustCafeView(HWND hwnd, int scrollX, int scrollY, int scrollCount)
     for (int i = 0; i < scrollCount; i++)
     {
         if (shouldStop) {
-            pressKeyGlobal(VK_CONTROL, 0);
-            appendLog("========== 脚本已停止 ==========", "WARNING");
+            // pressKeyGlobal(VK_CONTROL, 0);
+            appendLog("========== 脚本已停止 ==========1221", "WARNING");
             isRunning = false;
             updateStartButtonState();
             return false;
@@ -1284,8 +1227,8 @@ bool arona::adjustCafeView(HWND hwnd, int scrollX, int scrollY, int scrollCount)
         scroll(hwnd, scrollX, scrollY, -3);
         
         if (!delayMsWithCheck(200)) {
-            pressKeyGlobal(VK_CONTROL, 0);
-            appendLog("========== 脚本已停止 ==========", "WARNING");
+            // pressKeyGlobal(VK_CONTROL, 0);
+            appendLog("========== 脚本已停止 ==========1231", "WARNING");
             isRunning = false;
             updateStartButtonState();
             return false;
@@ -1317,7 +1260,7 @@ void arona::patStudents(HWND hwnd, int rounds)
     for (int i = 0; i < rounds; i++)
     {
         if (shouldStop) {
-            appendLog("========== 脚本已停止 ==========", "WARNING");
+            appendLog("========== 脚本已停止 ==========1263", "WARNING");
             isRunning = false;
             updateStartButtonState();
             return;
@@ -1736,7 +1679,7 @@ void arona::executeScript()
     
     // 检查停止信号
     if (shouldStop) {
-        appendLog("========== 脚本已停止 ==========", "WARNING");
+        appendLog("========== 脚本已停止 ==========1682", "WARNING");
         isRunning = false;
         updateStartButtonState();
         return;
@@ -1770,7 +1713,7 @@ void arona::executeScript()
     // }
 
     if (!isRunning) {
-        appendLog("========== 脚本已停止 ==========", "WARNING");
+        appendLog("========== 脚本已停止 ==========1716", "WARNING");
         updateStartButtonState();
         return;
     }
@@ -1785,7 +1728,7 @@ void arona::executeScript()
     patStudents(hwnd, 3);
     
     if (!delayMsWithCheck(500)) {
-        appendLog("========== 脚本已停止 ==========", "WARNING");
+        appendLog("========== 脚本已停止 ==========1731", "WARNING");
         isRunning = false;
         updateStartButtonState();
         return;
@@ -1813,9 +1756,12 @@ void arona::executeScript()
     closeGameWindow(hwnd);
     
     // ==================== 完成 ====================
-    appendLog("========== 脚本执行完成 ==========", "SUCCESS");
-    isRunning = false;
-    updateStartButtonState();
+    appendLog("========== 脚本执行完成 ==========1758", "SUCCESS");
+    if (shouldStop)
+    {
+        isRunning = false;
+        updateStartButtonState();
+    }
 }
 
 // ==================== 工具函数实现 ====================
@@ -2086,49 +2032,49 @@ void arona::pressKeyGlobal(int vkCode, bool press)
 
 // ==================== 多窗口和定时功能实现 ====================
 
-void arona::onClearTimersButtonClicked()
+void arona::onTimerSettingsButtonClicked()
 {
-    // 清空所有定时设置
-    for (int i = 0; i < 8; i++) {
-        timeCheckBoxes[i]->setChecked(false);
-        timeEdits[i]->setTime(QTime(0, 0));
-    }
+    // 打开定时设置对话框
+    // 先将当前设置加载到dialog
+    timerDialog->setTimerEnabled(timerEnabled);
+    timerDialog->setScheduledTimes(scheduledTimes);
     
-    scheduledTimes.clear();
-    executedToday.clear();
-    
-    appendLog("已清空所有定时设置", "INFO");
-}
-
-void arona::updateScheduledTimes()
-{
-    // 更新定时任务列表
-    scheduledTimes.clear();
-    
-    for (int i = 0; i < 8; i++) {
-        if (timeCheckBoxes[i]->isChecked()) {
-            QTime time = timeEdits[i]->time();
-            scheduledTimes.append(time);
+    // 显示对话框
+    if (timerDialog->exec() == QDialog::Accepted) {
+        // 用户点击了保存按钮，更新设置
+        timerEnabled = timerDialog->isTimerEnabled();
+        scheduledTimes = timerDialog->getScheduledTimes();
+        
+        appendLog(QString("定时设置已更新: %1启用, 共%2个定时点")
+                 .arg(timerEnabled ? "已" : "未")
+                 .arg(scheduledTimes.size()), "INFO");
+                 
+        // 如果启用了定时功能，显示所有定时点
+        if (timerEnabled && !scheduledTimes.isEmpty()) {
+            QString timesStr;
+            for (const QTime &time : scheduledTimes) {
+                if (!timesStr.isEmpty()) timesStr += ", ";
+                timesStr += time.toString("HH:mm");
+            }
+            appendLog(QString("定时时间: %1").arg(timesStr), "INFO");
         }
+    } else {
+        // 用户点击了取消按钮
+        appendLog("定时设置未更改", "INFO");
     }
-    
-    // appendLog(QString("已加载%1个定时任务").arg(scheduledTimes.size()), "INFO");
 }
 
 void arona::onSchedulerTimerTimeout()
 {
     // 每30秒检查一次是否需要执行定时任务
-    if (!enableTimerCheckBox->isChecked()) {
+    if (!timerEnabled) {
         return;  // 定时功能未启用
     }
     
     if (isRunning) {
         return;  // 脚本正在运行，不重复启动
     }
-    
-    // 更新定时任务列表
-    updateScheduledTimes();
-    
+
     // 检查当前时间
     checkAndExecuteScheduledTasks();
 }
@@ -2193,7 +2139,7 @@ void arona::executeAllWindows()
     // 依次执行每个窗口
     for (int i = 0; i < 3; i++) {
         if (shouldStop) {
-            appendLog("========== 脚本已停止 ==========", "WARNING");
+            appendLog("========== 脚本已停止 ==========2139", "WARNING");
             isRunning = false;
             updateStartButtonState();
             return;

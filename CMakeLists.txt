@@ -16,6 +16,8 @@ set(PROJECT_SOURCES
         main.cpp
         arona.cpp
         arona.h
+        timerdialog.cpp
+        timerdialog.h
         resources.qrc
 )
 

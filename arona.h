@@ -38,6 +38,7 @@
 #include <QTime>
 #include <QVector>
 #include <QSet>
+#include "timerdialog.h"
 
 class arona : public QMainWindow
 {
@@ -69,8 +70,8 @@ private slots:
     void onSelectBgButtonClicked();
     void onstartButtonClicked();
     void onSchedulerTimerTimeout();
-    void onClearTimersButtonClicked();
-
+    void onTimerSettingsButtonClicked();
+    
 #if DEBUG_MODE
     void onDebugButtonClicked();
     void onDebugTypeChanged(int index);
@@ -94,14 +95,8 @@ private:
     QTextEdit *logTextEdit;
     QMenuBar *menubar;
     
-    // 定时功能控件
-    QGroupBox *timerGroupBox;
-    QCheckBox *enableTimerCheckBox;
-    QWidget *timerListWidget;
-    QVBoxLayout *timerListLayout;
-    QTimeEdit *timeEdits[8];
-    QCheckBox *timeCheckBoxes[8];
-    QPushButton *clearTimersButton;
+    // 定时功能按钮
+    QPushButton *timerSettingsButton;
     
 #if DEBUG_MODE
     // 调试功能控件
@@ -138,12 +133,14 @@ private:
     QTimer *captureTimer;
     QTimer *schedulerTimer;  // 定时检查计时器
     QPixmap backgroundPixmap;  // 背景图片
+    TimerDialog *timerDialog;  // 定时设置对话框
 
     // 多窗口句柄
     QVector<HWND> gameHandles;  // 存储最多3个游戏窗口句柄
     int currentHandleIndex;  // 当前正在处理的句柄索引
     
     // 定时任务
+    bool timerEnabled;  // 定时功能是否启用
     QVector<QTime> scheduledTimes;  // 定时执行的时间列表
     QSet<QString> executedToday;  // 今天已执行的时间（避免重复）
 
@@ -166,10 +163,11 @@ private:
     void loadPositionTemplates();
     void loadpositionReadyTemplates();
     QString recognizeCurrentPosition(QImage screenshot);
-    void updateScheduledTimes();
     void checkAndExecuteScheduledTasks();
     void executeAllWindows();
     bool isPositionReady(QImage screenshot, QRect roi);
+    void loadTimerSettings();  // 从dialog加载定时设置
+    void saveTimerSettings();  // 保存定时设置到dialog
     
     // 工具函数
     void delayMs(int milliseconds);  // 无阻塞延时
