@@ -155,6 +155,15 @@ private:
     const QRect INVITATION_INTERFACE_ROI = QRect(623, 125, 36, 36);
     const QRect TASK_END_ROI = QRect(1840, 520, 36, 36);
     const QRect HARD_TASK_ROI = QRect(1595, 215, 36, 36);
+    const QRect INVITATION_NOTICE_ROI = QRect(921, 223, 36, 36);
+    
+    // 学生头像二值化模板及尺寸信息
+    struct StudentTemplate {
+        QVector<bool> binaryData;
+        int width;
+        int height;
+    };
+    QHash<QString, StudentTemplate> binarizedStudentTemplates;
     
     // 辅助函数
     void setupUi();
@@ -164,12 +173,15 @@ private:
     QString calculateImageHash(const QImage& image, const QRect& roi = QRect());
     void loadPositionTemplates();
     void loadpositionReadyTemplates();
+    void loadStudentAvatarTemplates();
     QString recognizeCurrentPosition(QImage screenshot);
     void checkAndExecuteScheduledTasks();
     void executeAllWindows();
     bool isPositionReady(QImage screenshot, QRect roi);
+    QString checkNotice(QImage screenshot, QRect roi);
     
     // 工具函数
+    void inviteStudentToCafe(HWND hwnd, QString titleStr);
     void muteSound(HWND hwnd);
     void doTask(HWND hwnd, int taskIndex, int subTaskIndex);
     void delayMs(int milliseconds);  // 无阻塞延时
@@ -193,9 +205,12 @@ private:
     void enterCafe1FromHall(HWND hwnd);
     void enterCafe2FromCafe1(HWND hwnd);
     void enterCafe1FromCafe2(HWND hwnd);
-    void inviteStudetToCafe(HWND hwnd, QList<int> studentNumbers);
+    void inviteStudentByName(HWND hwnd, QStringList studentNames);
     int findStudentInInvitationInterface(QImage image, QString studentName);
-    bool compareImagesByOddRows(const QImage &image1, const QImage &image2);  // 逐像素对比奇数行
+    bool compareImagesByOddRows(const QImage &image1, const QImage &image2);  // 逐像素对比奇数行（已废弃）
+    QVector<bool> binarizeImage(const QImage &image, const QRgb &backgroundColor);  // 二值化图像
+    int calculateHammingDistance(const QVector<bool> &binary1, const QVector<bool> &binary2);  // 计算汉明距离
+    bool compareImagesByHamming(const QImage &image, const QVector<bool> &templateBinary, int width, int height, const QRgb &backgroundColor, double threshold = 0.95);  // 基于汉明距离的图像比较
     
     // 辅助逻辑函数（封装重复逻辑）
     bool waitForPosition(HWND hwnd, const QString &targetPosition, int maxRetries, int delayMs, int clickX, int clickY);

@@ -64,6 +64,9 @@ arona::arona(QWidget *parent)
     // 加载邀请券模板
     loadpositionReadyTemplates();
     
+    // 加载学生头像模板（二值化）
+    loadStudentAvatarTemplates();
+    
     // 创建定时器用于检查定时任务
     schedulerTimer = new QTimer(this);
     connect(schedulerTimer, &QTimer::timeout, this, &arona::onSchedulerTimerTimeout);
@@ -818,6 +821,131 @@ void arona::loadpositionReadyTemplates()
     appendLog(QString("位置就绪模板加载完成，共加载%1个模板").arg(positionReadyTemplates.size()), "SUCCESS");
 }
 
+void arona::loadStudentAvatarTemplates()
+{
+    binarizedStudentTemplates.clear();
+    
+    // 背景色 #F3F7F8
+    QRgb backgroundColor = qRgb(243, 247, 248);
+    
+    // 加载学生头像模板
+    QDir dir(":/images/student_avatar");
+    if (!dir.exists()) {
+        appendLog("学生头像模板目录不存在", "ERROR");
+        return;
+    }
+    
+    QStringList files = dir.entryList(QDir::Files);
+    int loadedCount = 0;
+    
+    foreach (QString file, files) {
+        if (file.endsWith(".png", Qt::CaseInsensitive)) {
+            QString filePath = dir.filePath(file);
+            QImage image(filePath);
+            
+            if (!image.isNull()) {
+                // 二值化图像
+                QVector<bool> binaryData = binarizeImage(image, backgroundColor);
+                
+                // 去掉文件扩展名作为学生名称
+                QString studentName = file.left(file.lastIndexOf('.'));
+                
+                // 存储二值化数据及尺寸信息
+                StudentTemplate tmpl;
+                tmpl.binaryData = binaryData;
+                tmpl.width = image.width();
+                tmpl.height = image.height();
+                binarizedStudentTemplates.insert(studentName, tmpl);
+                loadedCount++;
+            } else {
+                appendLog(QString("无法加载学生头像模板: %1").arg(file), "WARNING");
+            }
+        }
+    }
+    
+    appendLog(QString("学生头像模板加载完成，共加载%1个模板").arg(loadedCount), "SUCCESS");
+}
+
+QVector<bool> arona::binarizeImage(const QImage &image, const QRgb &backgroundColor)
+{
+    // 将图像二值化：背景色为0，其他颜色为1
+    // 允许一定的颜色容差（RGB各分量±10）
+    const int tolerance = 10;
+    
+    int width = image.width();
+    int height = image.height();
+    QVector<bool> binaryData(width * height);
+    
+    int bgR = qRed(backgroundColor);
+    int bgG = qGreen(backgroundColor);
+    int bgB = qBlue(backgroundColor);
+    
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            QRgb pixel = image.pixel(x, y);
+            int r = qRed(pixel);
+            int g = qGreen(pixel);
+            int b = qBlue(pixel);
+            
+            // 检查是否接近背景色
+            bool isBackground = (qAbs(r - bgR) <= tolerance) &&
+                               (qAbs(g - bgG) <= tolerance) &&
+                               (qAbs(b - bgB) <= tolerance);
+            
+            binaryData[y * width + x] = !isBackground;  // 背景为0，其他为1
+        }
+    }
+    
+    return binaryData;
+}
+
+int arona::calculateHammingDistance(const QVector<bool> &binary1, const QVector<bool> &binary2)
+{
+    // 计算两个二值化数据的汉明距离（不同位的数量）
+    if (binary1.size() != binary2.size()) {
+        return -1;  // 大小不匹配
+    }
+    
+    int distance = 0;
+    for (int i = 0; i < binary1.size(); i++) {
+        if (binary1[i] != binary2[i]) {
+            distance++;
+        }
+    }
+    
+    return distance;
+}
+
+bool arona::compareImagesByHamming(const QImage &image, const QVector<bool> &templateBinary, 
+                                   int width, int height, const QRgb &backgroundColor, double threshold)
+{
+    // 检查尺寸
+    if (image.width() != width || image.height() != height) {
+        return false;
+    }
+    
+    // 二值化待识别图像
+    QVector<bool> imageBinary = binarizeImage(image, backgroundColor);
+    
+    // 计算汉明距离
+    int distance = calculateHammingDistance(imageBinary, templateBinary);
+    
+    if (distance < 0) {
+        return false;
+    }
+    
+    // 计算相似度 (1 - 汉明距离/总像素数)
+    int totalPixels = width * height;
+    double similarity = 1.0 - (double)distance / totalPixels;
+    
+    appendLog(QString("汉明距离: %1, 总像素: %2, 相似度: %3")
+             .arg(distance)
+             .arg(totalPixels)
+             .arg(similarity, 0, 'f', 4), "INFO");
+    
+    return similarity >= threshold;
+}
+
 QString arona::recognizeCurrentPosition(QImage screenshot)
 {
     // 循环遍历所有的位置模板
@@ -899,7 +1027,7 @@ void arona::enterCafe1FromCafe2(HWND hwnd)
     click(hwnd, BUTTON_CAFE2_TO_CAFE1.x(), BUTTON_CAFE2_TO_CAFE1.y());
 }
 
-void arona::inviteStudetToCafe(HWND hwnd, QList<int> studentNumbers)
+void arona::inviteStudentByName(HWND hwnd, QStringList studentNames)
 {
     // 邀请学生进入咖啡厅
     // 点击邀请券，打开邀请界面
@@ -924,12 +1052,49 @@ void arona::inviteStudetToCafe(HWND hwnd, QList<int> studentNumbers)
 
     if (retries <= 0) {
         appendLog("邀请界面未就绪，超时退出", "WARNING");
-        isRunning = false;
-        updateStartButtonState();
         return;
     }
 
+    QImage screenshot = captureWindow(hwnd);
+    if (screenshot.isNull()) {
+        appendLog("截图失败", "ERROR");
+        return;
+    }
+    
     // 查找对应学生
+    for (int i = 0; i < studentNames.size(); i++) {
+        int studentIndex = findStudentInInvitationInterface(screenshot, studentNames[i]);
+        if (studentIndex == 0) {
+            appendLog(QString("未找到学生: %1").arg(studentNames[i]), "WARNING");
+        }
+
+        appendLog(QString("找到学生: %1, 位置: %2").arg(studentNames[i]).arg(studentIndex), "INFO");
+
+        // 点击学生
+        click(hwnd, 1150, studentIndex);
+        delayMs(1500);
+
+        QImage inviteImage = captureWindow(hwnd);
+        QString notice = checkNotice(inviteImage, INVITATION_NOTICE_ROI);
+        if (notice == "(921,223)ChangeClothes") {
+            appendLog(QString("%1正穿着另一件衣服").arg(studentNames[i]), "SUCCESS");
+            click(hwnd, 1317, 260);
+        }
+        else if (notice == "(921,223)NextRoom") {
+            appendLog(QString("%1正在另一个咖啡厅").arg(studentNames[i]), "SUCCESS");
+            click(hwnd, 1317, 260);
+        }
+        else if (notice == "(921,223)Notice") {
+            appendLog(QString("邀请%1前来咖啡厅").arg(studentNames[i]), "SUCCESS");
+            click(hwnd, 1150, 775);
+            delayMs(2500);
+            break;
+        }
+        else {
+            appendLog(QString("未识别到邀请通知: %1").arg(notice), "WARNING");
+        }
+        delayMs(1000);
+    }
     
     return;
 }
@@ -956,19 +1121,22 @@ int arona::findStudentInInvitationInterface(QImage image, QString studentName)
 
     appendLog("开始搜索学生头像标记...", "INFO");
     
-    // 加载学生模板图片
-    QString templatePath = QString(":/images/student_avatar/%1.png").arg(studentName);
-    QImage templateImage(templatePath);
-    
-    if (templateImage.isNull()) {
-        appendLog(QString("无法加载学生模板图片: %1").arg(templatePath), "ERROR");
+    // 从预加载的二值化模板中获取学生模板
+    if (!binarizedStudentTemplates.contains(studentName)) {
+        appendLog(QString("未找到学生的二值化模板: %1").arg(studentName), "ERROR");
         return 0;
     }
     
-    appendLog(QString("已加载学生模板: %1, 尺寸: %2x%3")
+    StudentTemplate templateData = binarizedStudentTemplates[studentName];
+    
+    appendLog(QString("已找到学生模板: %1, 尺寸: %2x%3, 二值化数据大小: %4")
              .arg(studentName)
-             .arg(templateImage.width())
-             .arg(templateImage.height()), "INFO");
+             .arg(templateData.width)
+             .arg(templateData.height)
+             .arg(templateData.binaryData.size()), "INFO");
+    
+    // 背景色 #F3F7F8
+    QRgb backgroundColor = qRgb(243, 247, 248);
 
     while (currentY <= maxY)
     {
@@ -1030,8 +1198,9 @@ int arona::findStudentInInvitationInterface(QImage image, QString studentName)
                         studentIndex++;
                     }
 
-                    // 使用逐像素对比奇数行
-                    if (compareImagesByOddRows(studentImg, templateImage)) {
+                    // 使用汉明距离进行比较（二值化 + 汉明距离）
+                    // 相似度阈值设为0.90，即允许10%的像素不同
+                    if (compareImagesByHamming(studentImg, templateData.binaryData, templateData.width, templateData.height, backgroundColor, 0.90)) {
                         appendLog(QString("找到匹配的学生: %1").arg(studentName), "SUCCESS");
                         return currentY;
                     } else {
@@ -1116,6 +1285,19 @@ bool arona::compareImagesByOddRows(const QImage &image1, const QImage &image2)
     
     appendLog(QString("图片匹配成功: 对比了%1个像素（奇数行），全部在容差范围内（±%2）").arg(comparedPixels).arg(tolerance), "SUCCESS");
     return true;
+}
+
+QString arona::checkNotice(QImage screenshot, QRect roi)
+{
+    QImage noticeImage = screenshot.copy(roi);
+
+    QString hash = calculateImageHash(noticeImage);
+    if (positionReadyTemplates.values().contains(hash)) {
+        qDebug() << "识别到邀请通知,键: " << positionReadyTemplates.key(hash);
+        return positionReadyTemplates.key(hash);
+    }
+
+    return "";
 }
 
 bool arona::isPositionReady(QImage screenshot, QRect roi)
@@ -1673,6 +1855,10 @@ void arona::executeScript(HWND hwnd, QString titleStr)
         return;
     }
 
+    // 置顶游戏窗口
+    SetForegroundWindow(hwnd);
+    SetFocus(hwnd);
+
     // ==================== 等待进入大厅 ====================
     if (!waitForPosition(hwnd, "Hall", 20, 4000, 120, 640)) {
         return;  // 进入失败，已在函数内处理
@@ -1761,18 +1947,11 @@ void arona::executeScript(HWND hwnd, QString titleStr)
         return;
     }
 
-    // 检查邀请券是否就绪
-    // QImage screenshot = captureWindow(hwnd);
-    // if (isPositionReady(screenshot, INVITATION_TICKET_ROI)) {
-    //     appendLog("邀请券就绪", "SUCCESS");
-
-    //     // 邀请学生
-    //     inviteStudetToCafe(hwnd, QList() << 1 << 2 << 3);
-    // }
-    // else {
-    //     appendLog("邀请券未就绪", "WARNING");
-    //     return;
-    // }
+    // 如果是在4点到12点之间，在咖啡厅1邀请学生
+    if (currentHour >= 4 && currentHour <= 12)
+    {
+        inviteStudentToCafe(hwnd, titleStr);
+    }
 
     if (!isRunning) {
         appendLog("========== 脚本已停止 ==========1716", "WARNING");
@@ -1805,6 +1984,12 @@ void arona::executeScript(HWND hwnd, QString titleStr)
     if (!waitForPosition(hwnd, "Cafe2", 10, 1500, 150, 1045)) {
         return;
     }
+
+    // 如果是16点到0点之间，在咖啡厅2邀请学生
+    if (currentHour >= 16 && currentHour <= 23)
+    {
+        inviteStudentToCafe(hwnd, titleStr);
+    }
     
     // 调整视角和位置
     if (!adjustCafeView(hwnd, 1500, 600, 12)) {
@@ -1829,6 +2014,37 @@ void arona::executeScript(HWND hwnd, QString titleStr)
 }
 
 // ==================== 工具函数实现 ====================
+void arona::inviteStudentToCafe(HWND hwnd, QString titleStr)
+{
+    // 检查邀请券是否就绪
+    QImage screenshot = captureWindow(hwnd);
+    if (isPositionReady(screenshot, INVITATION_TICKET_ROI))
+    {
+        appendLog("邀请券就绪，准备邀请学生", "SUCCESS");
+
+        QStringList studentNames;
+        if (titleStr == "最大号")
+        {
+            studentNames << "星野（泳装）" << "日奈（礼服）" << "优香（体操服）" << "宫子" << "晴（露营）";
+        }
+        else if (titleStr == "大号")
+        {
+            studentNames << "未花" << "花子（泳装）" << "星野（泳装）" << "玲纱" << "爱露";
+        }
+        else if (titleStr == "小七")
+        {
+            studentNames << "日奈（礼服）" << "未花" << "花子（泳装）" << "星野（泳装）" << "爱丽丝（女仆）";
+        }
+        // 邀请学生
+        inviteStudentByName(hwnd, studentNames);
+    }
+    else
+    {
+        appendLog("邀请券未就绪", "WARNING");
+    }
+    return;
+}
+
 // 关闭声音函数
 void arona::muteSound(HWND hwnd)
 {
@@ -2231,10 +2447,10 @@ void arona::executeAllWindows()
         }
     }
 
-    // 获取当前时间，在凌晨0点到6点之间关闭声音
+    // 获取当前时间，在凌晨0点到7点之间关闭声音
     QTime currentTime = QTime::currentTime();
     int currentHour = currentTime.hour();
-    if (currentHour >= 0 && currentHour <= 23)
+    if (currentHour >= 0 && currentHour <= 7)
     {
         appendLog("在凌晨0点到6点之间关闭声音", "INFO");
         for (int i = 0; i < 3; i++) {
