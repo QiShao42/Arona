@@ -3,8 +3,12 @@
     <qresource prefix="/">
         <file>images/background.jpg</file>
         <file>images/position_ready/(1310,953)ticket.png</file>
+        <file>images/position_ready/(1595,215)HardTask.png</file>
+        <file>images/position_ready/(1840,520)TaskEnd.png</file>
         <file>images/position_ready/(623,125)Invitation_interface.png</file>
         <file>images/position_templates/(118,960)Hall.png</file>
+        <file>images/position_templates/(163,15)Opration.png</file>
+        <file>images/position_templates/(163,15)Task.png</file>
         <file>images/position_templates/(230,134)Cafe1.png</file>
         <file>images/position_templates/(230,134)Cafe2.png</file>
         <file>images/student_avatar/亚子.png</file>

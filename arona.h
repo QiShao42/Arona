@@ -153,6 +153,8 @@ private:
     // 邀请券区域
     const QRect INVITATION_TICKET_ROI = QRect(1310, 953, 36, 36);
     const QRect INVITATION_INTERFACE_ROI = QRect(623, 125, 36, 36);
+    const QRect TASK_END_ROI = QRect(1840, 520, 36, 36);
+    const QRect HARD_TASK_ROI = QRect(1595, 215, 36, 36);
     
     // 辅助函数
     void setupUi();
@@ -166,10 +168,10 @@ private:
     void checkAndExecuteScheduledTasks();
     void executeAllWindows();
     bool isPositionReady(QImage screenshot, QRect roi);
-    void loadTimerSettings();  // 从dialog加载定时设置
-    void saveTimerSettings();  // 保存定时设置到dialog
     
     // 工具函数
+    void muteSound(HWND hwnd);
+    void doTask(HWND hwnd, int taskIndex, int subTaskIndex);
     void delayMs(int milliseconds);  // 无阻塞延时
     bool delayMsWithCheck(int milliseconds);  // 带停止检查的延时，返回false表示需要停止
     void click(HWND hwnd, int x, int y);  // 模拟点击
@@ -185,7 +187,7 @@ private:
     void startScript();  // 启动脚本
     void stopScript();  // 停止脚本
     void updateStartButtonState();  // 更新启动按钮状态
-    void executeScript();  // 执行脚本主逻辑
+    void executeScript(HWND hwnd, QString titleStr);  // 执行脚本主逻辑
     
     // 业务逻辑函数
     void enterCafe1FromHall(HWND hwnd);

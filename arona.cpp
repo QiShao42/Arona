@@ -629,12 +629,12 @@ void arona::captureWindowHandle(int handleIndex)
             title = "(无标题窗口)";
         }
         
-        // 打印窗口句柄，标题和窗口类名
-        wchar_t className[256];
-        GetClassNameW(hwnd, className, 256);
-        QString classNameStr = QString::fromWCharArray(className);
-        appendLog(QString("成功抓取窗口句柄%1: %2, 窗口标题: %3, 窗口类名: %4")
-                 .arg(handleIndex).arg(handleValue).arg(title).arg(classNameStr), "SUCCESS");
+        // 打印窗口句柄，标题和父窗口名
+        wchar_t parentTitle[256];
+        GetWindowTextW(GetParent(hwnd), parentTitle, 256);
+        QString parentTitleStr = QString::fromWCharArray(parentTitle);
+        appendLog(QString("成功抓取窗口句柄%1: %2, 窗口标题: %3, 父窗口名: %4")
+                 .arg(handleIndex).arg(handleValue).arg(title).arg(parentTitleStr), "SUCCESS");
     } else {
         appendLog(QString("抓取窗口句柄%1失败").arg(handleIndex), "ERROR");
         if (handleIndex == 1) handleLineEdit->clear();
@@ -1122,15 +1122,17 @@ bool arona::isPositionReady(QImage screenshot, QRect roi)
 {
     // 检查位置是否就绪
     QImage positionReady = screenshot.copy(roi);
+
     // 保存截图
-    QString timestamp = QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss");
-    QString screenshotPath = "screenshots/position_ready_" + timestamp + ".png";
-    if (positionReady.save(screenshotPath)) {
-        appendLog(QString("已保存位置就绪截图: %1").arg(screenshotPath), "SUCCESS");
-    }
-    else {
-        appendLog("保存位置就绪截图失败", "ERROR");
-    }
+    // QString timestamp = QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss");
+    // QString screenshotPath = "screenshots/position_ready_" + timestamp + ".png";
+    // if (positionReady.save(screenshotPath)) {
+    //     appendLog(QString("已保存位置就绪截图: %1").arg(screenshotPath), "SUCCESS");
+    // }
+    // else {
+    //     appendLog("保存位置就绪截图失败", "ERROR");
+    // }
+    
     QString hash = calculateImageHash(positionReady);
     if (positionReadyTemplates.values().contains(hash)) {
         qDebug() << "位置就绪,键: " << positionReadyTemplates.key(hash);
@@ -1149,7 +1151,7 @@ bool arona::isPositionReady(QImage screenshot, QRect roi)
 
 bool arona::waitForPosition(HWND hwnd, const QString &targetPosition, int maxRetries, int delayMs, int clickX, int clickY)
 {
-    appendLog(QString("等待进入位置: %1 (最多等待%2次)").arg(targetPosition).arg(maxRetries), "INFO");
+    appendLog(QString("等待进入位置: %1 ").arg(targetPosition).arg(maxRetries), "INFO");
     
     int retries = maxRetries;
     while (retries > 0)
@@ -1157,6 +1159,17 @@ bool arona::waitForPosition(HWND hwnd, const QString &targetPosition, int maxRet
         // 检查是否需要停止
         if (shouldStop) {
             appendLog("========== 脚本已停止 ==========1159", "WARNING");
+            isRunning = false;
+            updateStartButtonState();
+            return false;
+        }
+
+        // 点击游戏窗口边缘（防止超时）
+        click(hwnd, clickX, clickY);
+
+        // 延时并检查停止信号
+        if (!delayMsWithCheck(delayMs)) {
+            appendLog("========== 脚本已停止 ==========1179", "WARNING");
             isRunning = false;
             updateStartButtonState();
             return false;
@@ -1173,17 +1186,6 @@ bool arona::waitForPosition(HWND hwnd, const QString &targetPosition, int maxRet
         }
         
         retries--;
-        
-        // 延时并检查停止信号
-        if (!delayMsWithCheck(delayMs)) {
-            appendLog("========== 脚本已停止 ==========1179", "WARNING");
-            isRunning = false;
-            updateStartButtonState();
-            return false;
-        }
-        
-        // 点击游戏窗口边缘（防止超时）
-        click(hwnd, clickX, clickY);
     }
     
     // 超时失败
@@ -1255,8 +1257,6 @@ void arona::adjustCafePosition(HWND hwnd)
 
 void arona::patStudents(HWND hwnd, int rounds)
 {
-    appendLog(QString("阿罗娜，开始摸头（循环%1轮）").arg(rounds), "INFO");
-    
     for (int i = 0; i < rounds; i++)
     {
         if (shouldStop) {
@@ -1270,8 +1270,6 @@ void arona::patStudents(HWND hwnd, int rounds)
         clickGrid(hwnd, 200, 240, 1900, 880, 65, 20);
         delayMs(1000);
     }
-    
-    appendLog("阿罗娜，摸头完成", "SUCCESS");
 }
 
 void arona::closeGameWindow(HWND hwnd)
@@ -1662,20 +1660,10 @@ void arona::updateStartButtonState()
     }
 }
 
-void arona::executeScript()
+void arona::executeScript(HWND hwnd, QString titleStr)
 {
     // ==================== 初始化 ====================
-    HWND hwnd = reinterpret_cast<HWND>(handleLineEdit->text().toLongLong());
-
-    // 获取窗口位置
-    RECT rect;
-    if (!GetWindowRect(hwnd, &rect)) {
-        appendLog("获取窗口位置失败", "ERROR");
-        isRunning = false;
-        updateStartButtonState();
-        return;
-    }
-    appendLog(QString("窗口位置: (%1, %2)").arg(rect.left).arg(rect.top), "SUCCESS");
+    
     
     // 检查停止信号
     if (shouldStop) {
@@ -1689,6 +1677,80 @@ void arona::executeScript()
     if (!waitForPosition(hwnd, "Hall", 20, 4000, 120, 640)) {
         return;  // 进入失败，已在函数内处理
     }
+
+    // 检测当前时间，精确到小时
+    QTime currentTime = QTime::currentTime();
+    int currentHour = currentTime.hour();
+    // 在凌晨4点到6点之间进行扫荡
+    if(currentHour >= 4 && currentHour <= 6)
+    {
+        // 扫荡
+        if (!waitForPosition(hwnd, "Opration", 10, 1500, 1880, 890))
+        {
+            return;
+        }
+        appendLog("阿罗娜，进入操作界面", "INFO");
+        delayMs(1500);
+        if (!waitForPosition(hwnd, "Task", 10, 1500, 1230, 370))
+        {
+            return;
+        }
+        delayMs(1500);
+        appendLog("阿罗娜，进入任务界面", "INFO");
+        // 前往最后一关
+        int waitCount = 0;
+        while (waitCount < 30)
+        {
+            click(hwnd, 1840, 520);
+            delayMs(300);
+            QImage screenshot = captureWindow(hwnd);
+            if (isPositionReady(screenshot, TASK_END_ROI))
+            {
+                click(hwnd, 1595, 215);
+                delayMs(300);
+                break;
+            }
+            waitCount++;
+        }
+        // 确保进入困难关卡
+        QImage screenshot = captureWindow(hwnd);
+        if (isPositionReady(screenshot, HARD_TASK_ROI))
+        {
+            delayMs(300);
+            click(hwnd, 1595, 215);
+        }
+        if (titleStr == "大号")
+        {
+            doTask(hwnd, 4, 2);
+        }
+        else if (titleStr == "最大号")
+        {
+            doTask(hwnd, 2, 1);
+        }
+        else if (titleStr == "小七")
+        {
+            doTask(hwnd, 18, 2);
+        }
+        else
+        {
+            appendLog("阿罗娜，不支持的窗口", "ERROR");
+        }
+        appendLog("阿罗娜，完成任务", "INFO");
+        delayMs(1000);
+
+        // 返回大厅
+        if (!waitForPosition(hwnd, "Hall", 30, 1000, 1855, 10))
+        {
+            return;
+        }
+    }
+
+    // 调试暂停
+    // shouldStop = true;
+    // appendLog("========== 脚本已停止 ==========1741", "WARNING");
+    // isRunning = false;
+    // updateStartButtonState();
+    // return;
 
     // ==================== 咖啡厅1 ====================
     appendLog("阿罗娜，前往咖啡厅1", "INFO");
@@ -1725,6 +1787,7 @@ void arona::executeScript()
     adjustCafePosition(hwnd);
     
     // 摸头
+    appendLog(QString("阿罗娜，开始摸头（循环3轮）"), "INFO");
     patStudents(hwnd, 3);
     
     if (!delayMsWithCheck(500)) {
@@ -1750,6 +1813,7 @@ void arona::executeScript()
     adjustCafePosition(hwnd);
     
     // 摸头
+    appendLog(QString("阿罗娜，开始摸头（循环3轮）"), "INFO");
     patStudents(hwnd, 3);
 
     // ==================== 关闭游戏 ====================
@@ -1765,6 +1829,43 @@ void arona::executeScript()
 }
 
 // ==================== 工具函数实现 ====================
+// 关闭声音函数
+void arona::muteSound(HWND hwnd)
+{
+    click(GetParent(hwnd), 1531, 30);
+    delayMs(1000);
+    click(hwnd, 715, 136);
+    delayMs(1000);
+    click(GetParent(hwnd), 1120, 30);
+    delayMs(1000);
+}
+
+void arona::doTask(HWND hwnd, int taskIndex, int subTaskIndex)
+{
+    // 点击固定次数，进入指定关卡
+    for (int i = 0; i < taskIndex; i++)
+    {
+        click(hwnd, 70, 540);
+        delayMs(300);
+    }
+    // 进入指定关卡
+    click(hwnd, 1680, 370 + subTaskIndex * 170);
+    delayMs(1000);
+
+    // 设定最大挑战次数
+    for (int i = 0; i < 3; i++)
+    {
+        click(hwnd, 1525, 500);
+        delayMs(300);
+    }
+
+    // 点击开始扫荡
+    click(hwnd, 1400, 630);
+    delayMs(1000);
+
+    // 点击确认
+    click(hwnd, 1140, 750);
+}
 
 void arona::delayMs(int milliseconds)
 {
@@ -1842,8 +1943,6 @@ void arona::clickGrid(HWND hwnd, int x1, int y1, int x2, int y2, int spacing, in
     int gridHeight = (y2 - y1) / spacing + 1;
     int totalPoints = gridWidth * gridHeight;
     
-    appendLog(QString("阿罗娜来摸头啦，乖乖排好队"), "INFO");
-    
     int clickedCount = 0;
     
     // 遍历Y坐标（从上到下）
@@ -1882,8 +1981,6 @@ void arona::clickGrid(HWND hwnd, int x1, int y1, int x2, int y2, int spacing, in
             }
         }
     }
-    
-    appendLog(QString("摸头完成，共摸头%1轮").arg(clickedCount), "SUCCESS");
 }
 
 void arona::moveMouse(int x, int y)
@@ -2107,23 +2204,44 @@ void arona::checkAndExecuteScheduledTasks()
     }
     
     // 如果是新的一天（00:00），清空执行记录
-    // if (currentTimeKey == "00:00") {
-    //     executedToday.clear();
-    //     appendLog("新的一天开始，定时任务记录已重置", "INFO");
-    // }
+    if (currentTimeKey == "00:00") {
+        executedToday.clear();
+        appendLog("新的一天开始，定时任务记录已重置", "INFO");
+    }
 }
 
 void arona::executeAllWindows()
 {
     // 依次对所有窗口执行脚本
     appendLog("========== 开始多窗口执行 ==========", "INFO");
-    
+
     int validHandleCount = 0;
     for (int i = 0; i < 3; i++) {
         if (gameHandles[i] != NULL && IsWindow(gameHandles[i])) {
             validHandleCount++;
+            // 如果窗口已最小化，则恢复
+            if (IsIconic(GetParent(gameHandles[i]))) {
+                appendLog(QString("窗口%1已最小化，正在恢复").arg(i), "INFO");
+                ShowWindow(GetParent(gameHandles[i]), SW_RESTORE);
+                delayMs(200);
+                appendLog(QString("窗口%1恢复成功").arg(i), "INFO");
+            }
             // 启动游戏
             click(gameHandles[i], 1450, 200);
+        }
+    }
+
+    // 获取当前时间，在凌晨0点到6点之间关闭声音
+    QTime currentTime = QTime::currentTime();
+    int currentHour = currentTime.hour();
+    if (currentHour >= 0 && currentHour <= 23)
+    {
+        appendLog("在凌晨0点到6点之间关闭声音", "INFO");
+        for (int i = 0; i < 3; i++) {
+            if (gameHandles[i] != NULL && IsWindow(gameHandles[i])) {
+                // 关闭声音
+                muteSound(gameHandles[i]);
+            }
         }
     }
     
@@ -2150,19 +2268,15 @@ void arona::executeAllWindows()
             continue;  // 跳过无效句柄
         }
         
+        // 获取父窗口标题
+        wchar_t title[256];
+        GetWindowTextW(GetParent(hwnd), title, 256);
+        QString titleStr = QString::fromWCharArray(title);
         currentHandleIndex = i;
-        appendLog(QString("---------- 正在处理窗口%1 ----------").arg(i + 1), "INFO");
-        
-        // 临时设置handleLineEdit以兼容现有代码
-        qint64 handleValue = reinterpret_cast<qint64>(hwnd);
-        QString oldHandleText = handleLineEdit->text();
-        handleLineEdit->setText(QString::number(handleValue));
+        appendLog(QString("---------- 正在处理窗口：%1 ----------").arg(titleStr), "INFO");
         
         // 执行脚本主逻辑
-        executeScript();
-        
-        // 恢复原始handleLineEdit
-        handleLineEdit->setText(oldHandleText);
+        executeScript(hwnd, titleStr);
         
         if (shouldStop) {
             break;
