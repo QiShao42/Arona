@@ -18,13 +18,21 @@ set(PROJECT_SOURCES
         arona.h
         timerdialog.cpp
         timerdialog.h
+        studentinvitedialog.cpp
+        studentinvitedialog.h
         resources.qrc
 )
+
+# Windows应用程序图标
+if(WIN32)
+    set(APP_ICON_RESOURCE "${CMAKE_CURRENT_SOURCE_DIR}/app_icon.rc")
+endif()
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
     qt_add_executable(ARONA
         MANUAL_FINALIZATION
         ${PROJECT_SOURCES}
+        ${APP_ICON_RESOURCE}
     )
 # Define target properties for Android with Qt 6 as:
 #    set_property(TARGET ARONA APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
@@ -40,6 +48,7 @@ else()
     else()
         add_executable(ARONA
             ${PROJECT_SOURCES}
+            ${APP_ICON_RESOURCE}
         )
     endif()
 endif()

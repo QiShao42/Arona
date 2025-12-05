@@ -38,7 +38,10 @@
 #include <QTime>
 #include <QVector>
 #include <QSet>
+#include <QHash>
+#include <QPair>
 #include "timerdialog.h"
+#include "studentinvitedialog.h"
 
 class arona : public QMainWindow
 {
@@ -71,6 +74,7 @@ private slots:
     void onstartButtonClicked();
     void onSchedulerTimerTimeout();
     void onTimerSettingsButtonClicked();
+    void onStudentInviteSettingsButtonClicked();
     
 #if DEBUG_MODE
     void onDebugButtonClicked();
@@ -97,6 +101,9 @@ private:
     
     // 定时功能按钮
     QPushButton *timerSettingsButton;
+    
+    // 邀请学生设置按钮
+    QPushButton *studentInviteSettingsButton;
     
 #if DEBUG_MODE
     // 调试功能控件
@@ -134,6 +141,7 @@ private:
     QTimer *schedulerTimer;  // 定时检查计时器
     QPixmap backgroundPixmap;  // 背景图片
     TimerDialog *timerDialog;  // 定时设置对话框
+    StudentInviteDialog *studentInviteDialog;  // 邀请学生设置对话框
 
     // 多窗口句柄
     QVector<HWND> gameHandles;  // 存储最多3个游戏窗口句柄
@@ -143,6 +151,12 @@ private:
     bool timerEnabled;  // 定时功能是否启用
     QVector<QTime> scheduledTimes;  // 定时执行的时间列表
     QSet<QString> executedToday;  // 今天已执行的时间（避免重复）
+    
+    // 邀请学生列表（按窗口标题存储）
+    QHash<QString, QStringList> studentInviteLists;
+    
+    // 扫荡任务参数（按窗口标题存储）: QPair<taskIndex, subTaskIndex>
+    QHash<QString, QPair<int, int>> sweepTaskParams;
 
     // 位置模板哈希值
     QHash<QString, QString> positionTemplates;
@@ -180,7 +194,14 @@ private:
     bool isPositionReady(QImage screenshot, QRect roi);
     QString checkNotice(QImage screenshot, QRect roi);
     
+    // 参数保存/加载
+    void saveTimerSettings();   // 保存定时参数到配置文件
+    void loadTimerSettings();   // 从配置文件加载定时参数
+    void saveStudentInviteSettings();   // 保存邀请学生设置到配置文件
+    void loadStudentInviteSettings();   // 从配置文件加载邀请学生设置
+    
     // 工具函数
+    void sweepTask(HWND hwnd, QString titleStr);
     void inviteStudentToCafe(HWND hwnd, QString titleStr);
     void muteSound(HWND hwnd);
     void doTask(HWND hwnd, int taskIndex, int subTaskIndex);
