@@ -164,12 +164,13 @@ private:
     // 位置就绪模板哈希值
     QHash<QString, QString> positionReadyTemplates;
 
-    // 邀请券区域
+    // 特定区域
     const QRect INVITATION_TICKET_ROI = QRect(1310, 953, 36, 36);
     const QRect INVITATION_INTERFACE_ROI = QRect(623, 125, 36, 36);
     const QRect TASK_END_ROI = QRect(1840, 520, 36, 36);
     const QRect HARD_TASK_ROI = QRect(1595, 215, 36, 36);
     const QRect INVITATION_NOTICE_ROI = QRect(921, 223, 36, 36);
+    const QRect EDIT_MODE_ROI = QRect(90, 992, 36, 36);
     
     // 学生头像二值化模板及尺寸信息
     struct StudentTemplate {
@@ -188,11 +189,12 @@ private:
     void loadPositionTemplates();
     void loadpositionReadyTemplates();
     void loadStudentAvatarTemplates();
-    QString recognizeCurrentPosition(QImage screenshot);
+    QString recognizeCurrentPosition(QImage screenshot, QString targetPosition);
     void checkAndExecuteScheduledTasks();
     void executeAllWindows();
     bool isPositionReady(QImage screenshot, QRect roi);
     QString checkNotice(QImage screenshot, QRect roi);
+    bool refreshCafe(HWND hwnd);
     
     // 参数保存/加载
     void saveTimerSettings();   // 保存定时参数到配置文件

@@ -977,7 +977,7 @@ bool arona::compareImagesByHamming(const QImage &image, const QVector<bool> &tem
     return similarity >= threshold;
 }
 
-QString arona::recognizeCurrentPosition(QImage screenshot)
+QString arona::recognizeCurrentPosition(QImage screenshot, QString targetPosition)
 {
     // 循环遍历所有的位置模板
     for (auto it = positionTemplates.begin(); it != positionTemplates.end(); ++it) {
@@ -993,31 +993,37 @@ QString arona::recognizeCurrentPosition(QImage screenshot)
             int y = match.captured(2).toInt();
             QString description = match.captured(3);
 
-            // 从截图中截取对应的区域 (36x36像素)
-            QRect region(x, y, 36, 36);
-            qDebug() << "截取区域: " << region;
-            
-            // 检查区域是否在截图范围内
-            if (!screenshot.rect().contains(region)) {
-                qDebug() << "区域超出游戏窗口范围，跳过:" << key;
-                continue;
-            }
-            
-            // 截取指定区域
-            QImage regionImage = screenshot.copy(region);
-            if (regionImage.isNull()) {
-                qDebug() << "截取区域失败:" << key;
-                continue;
-            }
-            
-            // 计算该区域的哈希值
-            QString currentHash = calculateImageHash(regionImage);
+            if (description == targetPosition)
+            {
+                // 从截图中截取对应的区域 (36x36像素)
+                QRect region(x, y, 36, 36);
+                qDebug() << "截取区域: " << region;
 
-            // 与模板哈希值进行比较
-            if (currentHash == templateHash) {
-                qDebug() << "找到匹配的位置模板:" << key;
-                qDebug() << "返回描述:" << description;
-                return description; // 返回位置信息
+                // 检查区域是否在截图范围内
+                if (!screenshot.rect().contains(region))
+                {
+                    qDebug() << "区域超出游戏窗口范围，跳过:" << key;
+                    return QString();
+                }
+
+                // 截取指定区域
+                QImage regionImage = screenshot.copy(region);
+                if (regionImage.isNull())
+                {
+                    qDebug() << "截取区域失败:" << key;
+                    return QString();
+                }
+
+                // 计算该区域的哈希值
+                QString currentHash = calculateImageHash(regionImage);
+
+                // 与模板哈希值进行比较
+                if (currentHash == templateHash)
+                {
+                    qDebug() << "找到匹配的位置模板:" << key;
+                    qDebug() << "返回描述:" << description;
+                    return description; // 返回位置信息
+                }
             }
             else {
                 // 保存截图
@@ -1397,6 +1403,19 @@ bool arona::waitForPosition(HWND hwnd, const QString &targetPosition, int maxRet
             return false;
         }
 
+        // 截图并识别当前位置
+        QImage screenshot = captureWindow(hwnd);
+        QString currentPosition = recognizeCurrentPosition(screenshot, targetPosition);
+        
+        if (currentPosition == targetPosition)
+        {
+            // 点击游戏窗口边缘（防止超时）
+            click(hwnd, clickX, clickY);
+            delayMsWithCheck(500);
+
+            return true;
+        }
+
         // 点击游戏窗口边缘（防止超时）
         click(hwnd, clickX, clickY);
 
@@ -1407,24 +1426,14 @@ bool arona::waitForPosition(HWND hwnd, const QString &targetPosition, int maxRet
             updateStartButtonState();
             return false;
         }
-        
-        // 截图并识别当前位置
-        QImage screenshot = captureWindow(hwnd);
-        QString currentPosition = recognizeCurrentPosition(screenshot);
-        
-        if (currentPosition == targetPosition)
-        {
-            // appendLog(QString("进入%1成功").arg(targetPosition), "SUCCESS");
-            return true;
-        }
-        
+
         retries--;
     }
     
     // 超时失败
     appendLog(QString("进入%1失败（超时）").arg(targetPosition), "ERROR");
-    isRunning = false;
-    updateStartButtonState();
+    // isRunning = false;
+    // updateStartButtonState();
     return false;
 }
 
@@ -1506,8 +1515,18 @@ void arona::patStudents(HWND hwnd, int rounds)
         }
         
         // appendLog(QString("摸头第%1/%2轮").arg(i + 1).arg(rounds), "INFO");
-        clickGrid(hwnd, 200, 240, 1900, 880, 65, 20);
+        clickGrid(hwnd, 200, 240, 1900, 880, 50, 20);
         delayMs(1000);
+
+        if (i < 2)
+        {
+            if (!refreshCafe(hwnd))
+            {
+                appendLog("刷新咖啡厅失败", "ERROR");
+                return;
+            }
+        }
+        delayMs(500);
     }
 }
 
@@ -1521,7 +1540,7 @@ void arona::closeGameWindow(HWND hwnd)
         wchar_t title[256];
         GetWindowTextW(parentHwnd, title, 256);
         QString titleStr = QString::fromWCharArray(title);
-        appendLog(QString("父窗口标题: %1").arg(titleStr), "INFO");
+        // appendLog(QString("父窗口标题: %1").arg(titleStr), "INFO");
         
         if (titleStr == "大号" || titleStr == "最大号" || titleStr == "小七")
         {
@@ -1951,6 +1970,7 @@ void arona::executeScript(HWND hwnd, QString titleStr)
     // 进入咖啡厅1
     enterCafe1FromHall(hwnd);
     if (!waitForPosition(hwnd, "Cafe1", 20, 1500, 150, 1045)) {
+        appendLog("进入咖啡厅1失败", "ERROR");
         return;
     }
 
@@ -2023,6 +2043,47 @@ void arona::executeScript(HWND hwnd, QString titleStr)
 }
 
 // ==================== 工具函数实现 ====================
+bool arona::refreshCafe(HWND hwnd)
+{
+    // 通过启用并退出编辑模式，刷新一次咖啡厅的学生位置
+    int waitCount = 0;
+    QImage screenshot;
+    while (waitCount < 30)
+    {
+        screenshot = captureWindow(hwnd);
+        if (isPositionReady(screenshot, EDIT_MODE_ROI))
+        {
+            click(hwnd, 90, 992);
+            break;
+        }
+
+        // 点击一次边缘位置
+        click(hwnd, 150, 1045);
+        waitCount++;
+        delayMs(1000);
+    }
+
+    if (waitCount >= 30)
+    {
+        return false;
+    }
+
+    waitCount = 0;
+    while (waitCount < 30)
+    {
+        delayMs(1000);
+        click(hwnd, 1680, 140);
+        screenshot = captureWindow(hwnd);
+        if (isPositionReady(screenshot, EDIT_MODE_ROI))
+        {
+            return true;
+        }
+        waitCount++;
+    }
+    
+    return false;
+}
+
 void arona::sweepTask(HWND hwnd, QString titleStr)
 {
     if (!waitForPosition(hwnd, "Opration", 10, 2000, 1880, 890))
@@ -2784,6 +2845,13 @@ void arona::executeAllWindows()
         }
     }
     
+    // 关闭所有游戏窗口
+    for (int i = 0; i < 3; i++) {
+        if (gameHandles[i] != NULL && IsWindow(gameHandles[i])) {
+            closeGameWindow(gameHandles[i]);
+        }
+    }
+
     appendLog("========== 多窗口执行完成 ==========", "SUCCESS");
     isRunning = false;
     updateStartButtonState();
