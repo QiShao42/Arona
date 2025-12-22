@@ -299,7 +299,34 @@ QWidget* StudentInviteDialog::createTabPage(const QString &windowTitle)
                             "subcontrol-position: top center; "
                             "padding: 0 5px; "
                             "}");
-    QHBoxLayout *taskLayout = new QHBoxLayout(taskGroup);
+    QVBoxLayout *taskMainLayout = new QVBoxLayout(taskGroup);
+    taskMainLayout->setSpacing(10);
+    
+    // 扫荡任务启用复选框
+    widgets.sweepTaskCheckBox = new QCheckBox("启用扫荡任务（凌晨4点到6点执行）", taskGroup);
+    widgets.sweepTaskCheckBox->setStyleSheet("QCheckBox { "
+                                            "color: #333; "
+                                            "font-size: 10pt; "
+                                            "font-weight: normal; "
+                                            "} "
+                                            "QCheckBox::indicator { "
+                                            "width: 18px; "
+                                            "height: 18px; "
+                                            "} "
+                                            "QCheckBox::indicator:unchecked { "
+                                            "border: 2px solid #2196F3; "
+                                            "border-radius: 3px; "
+                                            "background-color: white; "
+                                            "} "
+                                            "QCheckBox::indicator:checked { "
+                                            "border: 2px solid #2196F3; "
+                                            "border-radius: 3px; "
+                                            "background-color: #2196F3; "
+                                            "}");
+    taskMainLayout->addWidget(widgets.sweepTaskCheckBox);
+    
+    // 任务参数行
+    QHBoxLayout *taskLayout = new QHBoxLayout();
     taskLayout->setSpacing(15);
     
     // 任务索引
@@ -345,7 +372,50 @@ QWidget* StudentInviteDialog::createTabPage(const QString &windowTitle)
     hintLabel->setStyleSheet("font-weight: normal; color: #888; font-size: 9pt;");
     taskLayout->addWidget(hintLabel);
     
+    taskMainLayout->addLayout(taskLayout);
+    
     mainPageLayout->addWidget(taskGroup);
+    
+    // 强制邀请设置
+    QGroupBox *inviteGroup = new QGroupBox("邀请设置", page);
+    inviteGroup->setStyleSheet("QGroupBox { "
+                              "border: 2px solid #9C27B0; "
+                              "border-radius: 5px; "
+                              "margin-top: 10px; "
+                              "font-weight: bold; "
+                              "color: #9C27B0; "
+                              "} "
+                              "QGroupBox::title { "
+                              "subcontrol-origin: margin; "
+                              "subcontrol-position: top center; "
+                              "padding: 0 5px; "
+                              "}");
+    QVBoxLayout *inviteLayout = new QVBoxLayout(inviteGroup);
+    
+    widgets.forceInviteCheckBox = new QCheckBox("强制邀请（忽略衣服限制和咖啡厅位置）", inviteGroup);
+    widgets.forceInviteCheckBox->setStyleSheet("QCheckBox { "
+                                              "color: #333; "
+                                              "font-size: 10pt; "
+                                              "font-weight: normal; "
+                                              "} "
+                                              "QCheckBox::indicator { "
+                                              "width: 18px; "
+                                              "height: 18px; "
+                                              "} "
+                                              "QCheckBox::indicator:unchecked { "
+                                              "border: 2px solid #9C27B0; "
+                                              "border-radius: 3px; "
+                                              "background-color: white; "
+                                              "} "
+                                              "QCheckBox::indicator:checked { "
+                                              "border: 2px solid #9C27B0; "
+                                              "border-radius: 3px; "
+                                              "background-color: #9C27B0; "
+                                              "}");
+    widgets.forceInviteCheckBox->setToolTip("开启后，即使学生穿着另一件衣服或在另一个咖啡厅也会继续邀请");
+    inviteLayout->addWidget(widgets.forceInviteCheckBox);
+    
+    mainPageLayout->addWidget(inviteGroup);
     
     // 保存控件引用
     tabWidgetsMap[windowTitle] = widgets;
@@ -519,6 +589,68 @@ void StudentInviteDialog::setAllTaskParams(const QHash<QString, QPair<int, int>>
 {
     for (auto it = params.constBegin(); it != params.constEnd(); ++it) {
         setTaskParams(it.key(), it.value().first, it.value().second);
+    }
+}
+
+bool StudentInviteDialog::isForceInviteEnabled(const QString &windowTitle) const
+{
+    if (tabWidgetsMap.contains(windowTitle)) {
+        return tabWidgetsMap[windowTitle].forceInviteCheckBox->isChecked();
+    }
+    return false;
+}
+
+void StudentInviteDialog::setForceInviteEnabled(const QString &windowTitle, bool enabled)
+{
+    if (tabWidgetsMap.contains(windowTitle)) {
+        tabWidgetsMap[windowTitle].forceInviteCheckBox->setChecked(enabled);
+    }
+}
+
+QHash<QString, bool> StudentInviteDialog::getAllForceInviteSettings() const
+{
+    QHash<QString, bool> settings;
+    for (const QString &title : windowTitles) {
+        settings[title] = isForceInviteEnabled(title);
+    }
+    return settings;
+}
+
+void StudentInviteDialog::setAllForceInviteSettings(const QHash<QString, bool> &settings)
+{
+    for (auto it = settings.constBegin(); it != settings.constEnd(); ++it) {
+        setForceInviteEnabled(it.key(), it.value());
+    }
+}
+
+bool StudentInviteDialog::isSweepTaskEnabled(const QString &windowTitle) const
+{
+    if (tabWidgetsMap.contains(windowTitle)) {
+        return tabWidgetsMap[windowTitle].sweepTaskCheckBox->isChecked();
+    }
+    return false;
+}
+
+void StudentInviteDialog::setSweepTaskEnabled(const QString &windowTitle, bool enabled)
+{
+    if (tabWidgetsMap.contains(windowTitle)) {
+        tabWidgetsMap[windowTitle].sweepTaskCheckBox->setChecked(enabled);
+    }
+}
+
+QHash<QString, bool> StudentInviteDialog::getAllSweepTaskSettings() const
+{
+    QHash<QString, bool> settings;
+    for (const QString &title : windowTitles) {
+        settings[title] = isSweepTaskEnabled(title);
+    }
+    return settings;
+}
+
+void StudentInviteDialog::setAllSweepTaskSettings(const QHash<QString, bool> &settings)
+{
+    for (auto it = settings.constBegin(); it != settings.constEnd(); ++it) {
+        setSweepTaskEnabled(it.key(), it.value());
     }
 }
 

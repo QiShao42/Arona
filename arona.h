@@ -2,7 +2,7 @@
 #define ARONA_H
 
 // 调试模式开关 - 设置为1启用调试功能，0禁用
-#define DEBUG_MODE 1
+#define DEBUG_MODE 0
 
 // 常用虚拟键码定义 (用于pressKey函数)
 #define VK_CTRL VK_CONTROL      // Ctrl键
@@ -12,6 +12,7 @@
 #define VK_ESC VK_ESCAPE        // Esc键
 #define VK_SPACE_KEY VK_SPACE   // 空格键
 #define VK_TAB_KEY VK_TAB       // Tab键
+#define VK_R_KEY 0x52           // R键
 
 #include <QMainWindow>
 #include <QDateTime>
@@ -157,6 +158,12 @@ private:
     
     // 扫荡任务参数（按窗口标题存储）: QPair<taskIndex, subTaskIndex>
     QHash<QString, QPair<int, int>> sweepTaskParams;
+    
+    // 扫荡任务启用状态（按窗口标题存储）
+    QHash<QString, bool> sweepTaskEnabled;
+    
+    // 强制邀请设置（按窗口标题存储，忽略衣服限制）
+    QHash<QString, bool> forceInviteEnabled;
 
     // 位置模板哈希值
     QHash<QString, QString> positionTemplates;
@@ -228,7 +235,7 @@ private:
     void enterCafe1FromHall(HWND hwnd);
     void enterCafe2FromCafe1(HWND hwnd);
     void enterCafe1FromCafe2(HWND hwnd);
-    void inviteStudentByName(HWND hwnd, QStringList studentNames);
+    void inviteStudentByName(HWND hwnd, QStringList studentNames, QString titleStr);
     int findStudentInInvitationInterface(QImage image, QString studentName);
     bool compareImagesByOddRows(const QImage &image1, const QImage &image2);  // 逐像素对比奇数行（已废弃）
     QVector<bool> binarizeImage(const QImage &image, const QRgb &backgroundColor);  // 二值化图像

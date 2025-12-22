@@ -46,6 +46,14 @@ arona::arona(QWidget *parent)
         gameHandles[i] = NULL;
     }
     
+    // 初始化窗口独立配置的默认值
+    QStringList windowTitles;
+    windowTitles << "最大号" << "大号" << "小七";
+    for (const QString &title : windowTitles) {
+        sweepTaskEnabled[title] = false;
+        forceInviteEnabled[title] = false;
+    }
+    
     // 创建定时设置对话框
     timerDialog = new TimerDialog(this);
     
@@ -1064,7 +1072,7 @@ void arona::enterCafe1FromCafe2(HWND hwnd)
     click(hwnd, BUTTON_CAFE2_TO_CAFE1.x(), BUTTON_CAFE2_TO_CAFE1.y());
 }
 
-void arona::inviteStudentByName(HWND hwnd, QStringList studentNames)
+void arona::inviteStudentByName(HWND hwnd, QStringList studentNames, QString titleStr)
 {
     // 邀请学生进入咖啡厅
     // 点击邀请券，打开邀请界面
@@ -1114,16 +1122,34 @@ void arona::inviteStudentByName(HWND hwnd, QStringList studentNames)
 
         QImage inviteImage = captureWindow(hwnd);
         QString notice = checkNotice(inviteImage, INVITATION_NOTICE_ROI);
+        
+        // 获取当前窗口的强制邀请设置
+        bool forceInvite = forceInviteEnabled.value(titleStr, false);
+        
         if (notice == "(921,223)ChangeClothes") {
-            appendLog(QString("%1正穿着另一件衣服").arg(studentNames[i]), "SUCCESS");
-            click(hwnd, 1317, 260);
+            if (forceInvite) {
+                appendLog(QString("%1正穿着另一件衣服，强制邀请").arg(studentNames[i]), "SUCCESS");
+                click(hwnd, 1150, 775);
+                delayMs(2500);
+                break;
+            } else {
+                appendLog(QString("%1正穿着另一件衣服，跳过").arg(studentNames[i]), "SUCCESS");
+                click(hwnd, 1317, 260);
+            }
+        }
+        else if (notice == "(921,223)NextRoomAndOtherClothes") {
+            if (forceInvite) {
+                appendLog(QString("%1正在另一个咖啡厅，并且穿着另一件衣服，强制邀请").arg(studentNames[i]), "SUCCESS");
+                click(hwnd, 1150, 775);
+                delayMs(2500);
+                break;
+            } else {
+                appendLog(QString("%1正在另一个咖啡厅，并且穿着另一件衣服，跳过").arg(studentNames[i]), "SUCCESS");
+                click(hwnd, 1317, 260);
+            }
         }
         else if (notice == "(921,223)NextRoom") {
             appendLog(QString("%1正在另一个咖啡厅").arg(studentNames[i]), "SUCCESS");
-            click(hwnd, 1317, 260);
-        }
-        else if (notice == "(921,223)NextRoomAndOtherClothes") {
-            appendLog(QString("%1正在另一个咖啡厅，并且穿着另一件衣服").arg(studentNames[i]), "SUCCESS");
             click(hwnd, 1317, 260);
         }
         else if (notice == "(921,223)Notice") {
@@ -1442,15 +1468,15 @@ bool arona::adjustCafeView(HWND hwnd, int scrollX, int scrollY, int scrollCount)
     // appendLog(QString("开始调整咖啡厅视角（滚动%1次）").arg(scrollCount), "INFO");
     
     // 唤醒游戏窗口
-    SetForegroundWindow(hwnd);
     SetFocus(hwnd);
     delayMs(200);
+
+    // moveMouseToWindow(hwnd, scrollX, scrollY);
     
     // 按下CTRL键
     pressKeyGlobal(VK_CONTROL, 1);
     
     if (!delayMsWithCheck(500)) {
-        // pressKeyGlobal(VK_CONTROL, 0);
         appendLog("========== 脚本已停止 ==========1210", "WARNING");
         isRunning = false;
         updateStartButtonState();
@@ -1463,7 +1489,6 @@ bool arona::adjustCafeView(HWND hwnd, int scrollX, int scrollY, int scrollCount)
     for (int i = 0; i < scrollCount; i++)
     {
         if (shouldStop) {
-            // pressKeyGlobal(VK_CONTROL, 0);
             appendLog("========== 脚本已停止 ==========1221", "WARNING");
             isRunning = false;
             updateStartButtonState();
@@ -1475,7 +1500,6 @@ bool arona::adjustCafeView(HWND hwnd, int scrollX, int scrollY, int scrollCount)
         scroll(hwnd, scrollX, scrollY, -3);
         
         if (!delayMsWithCheck(200)) {
-            // pressKeyGlobal(VK_CONTROL, 0);
             appendLog("========== 脚本已停止 ==========1231", "WARNING");
             isRunning = false;
             updateStartButtonState();
@@ -1943,9 +1967,13 @@ void arona::executeScript(HWND hwnd, QString titleStr)
     // 检测当前时间，精确到小时
     QTime currentTime = QTime::currentTime();
     int currentHour = currentTime.hour();
-    // 在凌晨4点到6点之间进行扫荡
-    if(currentHour >= 4 && currentHour <= 6)
+    
+    // 检查当前窗口是否启用了扫荡任务，并且在凌晨4点到6点之间
+    bool shouldSweep = sweepTaskEnabled.value(titleStr, false) && (currentHour >= 4 && currentHour <= 6);
+    
+    if (shouldSweep)
     {
+        appendLog(QString("[%1] 开始执行扫荡任务").arg(titleStr), "INFO");
         // 扫荡
         sweepTask(hwnd, titleStr);
         delayMs(1000);
@@ -1955,6 +1983,10 @@ void arona::executeScript(HWND hwnd, QString titleStr)
         {
             return;
         }
+    }
+    else if (currentHour >= 4 && currentHour <= 6)
+    {
+        appendLog(QString("[%1] 扫荡任务未启用，跳过").arg(titleStr), "INFO");
     }
 
     // 调试暂停
@@ -1987,9 +2019,9 @@ void arona::executeScript(HWND hwnd, QString titleStr)
     }
     
     // 调整视角和位置
-    if (!adjustCafeView(hwnd, 1500, 600, 12)) {
-        return;
-    }
+    // if (!adjustCafeView(hwnd, 1500, 600, 12)) {
+    //     return;
+    // }
     adjustCafePosition(hwnd);
     
     // 摸头
@@ -2021,9 +2053,9 @@ void arona::executeScript(HWND hwnd, QString titleStr)
     }
     
     // 调整视角和位置
-    if (!adjustCafeView(hwnd, 1500, 600, 12)) {
-        return;
-    }
+    // if (!adjustCafeView(hwnd, 1500, 600, 12)) {
+    //     return;
+    // }
     adjustCafePosition(hwnd);
     
     // 摸头
@@ -2154,7 +2186,7 @@ void arona::inviteStudentToCafe(HWND hwnd, QString titleStr)
         // appendLog(QString("准备邀请: %1").arg(studentNames.join(", ")), "INFO");
         
         // 邀请学生
-        inviteStudentByName(hwnd, studentNames);
+        inviteStudentByName(hwnd, studentNames, titleStr);
     }
     else
     {
@@ -2428,6 +2460,8 @@ void arona::pressKey(HWND hwnd, int vkCode, bool press)
         appendLog("窗口句柄无效", "ERROR");
         return;
     }
+
+    HWND hwndParent = GetParent(hwnd);
     
     // 使用PostMessage发送键盘消息到指定窗口
     if (press) {
@@ -2435,13 +2469,13 @@ void arona::pressKey(HWND hwnd, int vkCode, bool press)
         // lParam包含扫描码、重复次数等信息
         // 这里简化处理，重复次数为1，扫描码为0
         LPARAM lParam = 0x00000001;  // 重复次数=1, 扫描码=0, 扩展键=0, 上下文码=0, 之前状态=0, 转换状态=0
-        PostMessage(hwnd, WM_KEYDOWN, vkCode, lParam);
+        PostMessage(hwndParent, WM_KEYDOWN, vkCode, lParam);
         appendLog(QString("向窗口发送按键按下: VK_CODE=0x%1(%2)").arg(vkCode, 2, 16, QChar('0')).arg(vkCode), "INFO");
     } else {
         // 抬起键 - 发送WM_KEYUP消息
         // lParam的bit30=1(之前按下), bit31=1(正在释放)
         LPARAM lParam = 0xC0000001;  // 重复次数=1, 之前状态=1, 转换状态=1
-        PostMessage(hwnd, WM_KEYUP, vkCode, lParam);
+        PostMessage(hwndParent, WM_KEYUP, vkCode, lParam);
         appendLog(QString("向窗口发送按键抬起: VK_CODE=0x%1(%2)").arg(vkCode, 2, 16, QChar('0')).arg(vkCode), "INFO");
     }
 }
@@ -2628,12 +2662,16 @@ void arona::onStudentInviteSettingsButtonClicked()
     // 先将当前设置加载到dialog
     studentInviteDialog->setAllStudentLists(studentInviteLists);
     studentInviteDialog->setAllTaskParams(sweepTaskParams);
+    studentInviteDialog->setAllForceInviteSettings(forceInviteEnabled);
+    studentInviteDialog->setAllSweepTaskSettings(sweepTaskEnabled);
     
     // 显示对话框
     if (studentInviteDialog->exec() == QDialog::Accepted) {
         // 用户点击了保存按钮，更新设置
         studentInviteLists = studentInviteDialog->getAllStudentLists();
         sweepTaskParams = studentInviteDialog->getAllTaskParams();
+        forceInviteEnabled = studentInviteDialog->getAllForceInviteSettings();
+        sweepTaskEnabled = studentInviteDialog->getAllSweepTaskSettings();
         
         // 保存设置到配置文件
         saveStudentInviteSettings();
@@ -2641,16 +2679,29 @@ void arona::onStudentInviteSettingsButtonClicked()
         appendLog("邀请学生设置已更新", "INFO");
         
         // 显示每个窗口的设置
-        for (auto it = studentInviteLists.constBegin(); it != studentInviteLists.constEnd(); ++it) {
-            if (!it.value().isEmpty()) {
-                appendLog(QString("[%1] 邀请列表: %2").arg(it.key()).arg(it.value().join(", ")), "INFO");
-            }
-        }
+        QStringList windowTitles;
+        windowTitles << "最大号" << "大号" << "小七";
         
-        // 显示扫荡任务参数
-        for (auto it = sweepTaskParams.constBegin(); it != sweepTaskParams.constEnd(); ++it) {
-            appendLog(QString("[%1] 扫荡参数: 任务索引=%2, 子任务索引=%3")
-                     .arg(it.key()).arg(it.value().first).arg(it.value().second), "INFO");
+        for (const QString &title : windowTitles) {
+            // 显示邀请列表
+            if (!studentInviteLists[title].isEmpty()) {
+                appendLog(QString("[%1] 邀请列表: %2").arg(title).arg(studentInviteLists[title].join(", ")), "INFO");
+            }
+            
+            // 显示扫荡任务设置
+            if (sweepTaskEnabled.value(title, false)) {
+                appendLog(QString("[%1] 扫荡任务: 已启用, 任务索引=%2, 子任务索引=%3")
+                         .arg(title)
+                         .arg(sweepTaskParams[title].first)
+                         .arg(sweepTaskParams[title].second), "INFO");
+            } else {
+                appendLog(QString("[%1] 扫荡任务: 未启用").arg(title), "INFO");
+            }
+            
+            // 显示强制邀请状态
+            if (forceInviteEnabled.value(title, false)) {
+                appendLog(QString("[%1] 强制邀请: 已启用").arg(title), "INFO");
+            }
         }
     } else {
         appendLog("邀请学生设置未更改", "INFO");
@@ -2679,6 +2730,14 @@ void arona::saveStudentInviteSettings()
         QPair<int, int> taskParams = sweepTaskParams.value(title, qMakePair(1, 2));
         settings.setValue(QString("SweepTask/%1/TaskIndex").arg(title), taskParams.first);
         settings.setValue(QString("SweepTask/%1/SubTaskIndex").arg(title), taskParams.second);
+        
+        // 保存扫荡任务启用状态
+        bool sweepEnabled = sweepTaskEnabled.value(title, false);
+        settings.setValue(QString("SweepTask/%1/Enabled").arg(title), sweepEnabled);
+        
+        // 保存强制邀请设置（每个窗口独立）
+        bool forceInvite = forceInviteEnabled.value(title, false);
+        settings.setValue(QString("StudentInvite/%1/ForceInvite").arg(title), forceInvite);
     }
     
     // 同步写入文件
@@ -2701,6 +2760,16 @@ void arona::loadStudentInviteSettings()
     sweepTaskParams["最大号"] = qMakePair(3, 2);
     sweepTaskParams["大号"] = qMakePair(4, 2);
     sweepTaskParams["小七"] = qMakePair(18, 2);
+    
+    // 设置默认的扫荡任务启用状态（默认禁用）
+    sweepTaskEnabled["最大号"] = false;
+    sweepTaskEnabled["大号"] = false;
+    sweepTaskEnabled["小七"] = false;
+    
+    // 设置默认的强制邀请状态（默认禁用）
+    forceInviteEnabled["最大号"] = false;
+    forceInviteEnabled["大号"] = false;
+    forceInviteEnabled["小七"] = false;
     
     // 检查配置文件是否存在
     QFile configFile(configPath);
@@ -2738,6 +2807,14 @@ void arona::loadStudentInviteSettings()
         if (taskIndex > 0) {
             sweepTaskParams[title] = qMakePair(taskIndex, subTaskIndex >= 0 ? subTaskIndex : 2);
         }
+        
+        // 加载扫荡任务启用状态
+        bool sweepEnabled = settings.value(QString("SweepTask/%1/Enabled").arg(title), false).toBool();
+        sweepTaskEnabled[title] = sweepEnabled;
+        
+        // 加载强制邀请设置（每个窗口独立）
+        bool forceInvite = settings.value(QString("StudentInvite/%1/ForceInvite").arg(title), false).toBool();
+        forceInviteEnabled[title] = forceInvite;
     }
     
     if (!hasStudentConfig) {
@@ -2750,17 +2827,25 @@ void arona::loadStudentInviteSettings()
         appendLog("已从配置文件加载邀请学生设置", "INFO");
     }
     
-    // 显示每个窗口的邀请学生设置
-    for (auto it = studentInviteLists.constBegin(); it != studentInviteLists.constEnd(); ++it) {
-        if (!it.value().isEmpty()) {
-            appendLog(QString("[%1] 邀请列表: %2").arg(it.key()).arg(it.value().join(", ")), "INFO");
+    // 显示每个窗口的设置
+    for (const QString &title : windowTitles) {
+        // 显示邀请列表
+        if (!studentInviteLists[title].isEmpty()) {
+            appendLog(QString("[%1] 邀请列表: %2").arg(title).arg(studentInviteLists[title].join(", ")), "INFO");
         }
-    }
-    
-    // 显示扫荡任务参数
-    for (auto it = sweepTaskParams.constBegin(); it != sweepTaskParams.constEnd(); ++it) {
-        appendLog(QString("[%1] 扫荡参数: 任务索引=%2, 子任务索引=%3")
-                 .arg(it.key()).arg(it.value().first).arg(it.value().second), "INFO");
+        
+        // 显示扫荡任务设置
+        if (sweepTaskEnabled[title]) {
+            appendLog(QString("[%1] 扫荡任务: 已启用, 任务索引=%2, 子任务索引=%3")
+                     .arg(title)
+                     .arg(sweepTaskParams[title].first)
+                     .arg(sweepTaskParams[title].second), "INFO");
+        }
+        
+        // 显示强制邀请状态
+        if (forceInviteEnabled[title]) {
+            appendLog(QString("[%1] 强制邀请: 已启用").arg(title), "INFO");
+        }
     }
 }
 

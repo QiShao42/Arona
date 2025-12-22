@@ -10,6 +10,7 @@
 #include <QLabel>
 #include <QGroupBox>
 #include <QSpinBox>
+#include <QCheckBox>
 #include <QStringList>
 #include <QHash>
 #include <QPair>
@@ -45,6 +46,30 @@ public:
     
     // 设置所有窗口的扫荡任务参数
     void setAllTaskParams(const QHash<QString, QPair<int, int>> &params);
+    
+    // 获取指定窗口的强制邀请设置
+    bool isForceInviteEnabled(const QString &windowTitle) const;
+    
+    // 设置指定窗口的强制邀请状态
+    void setForceInviteEnabled(const QString &windowTitle, bool enabled);
+    
+    // 获取所有窗口的强制邀请设置
+    QHash<QString, bool> getAllForceInviteSettings() const;
+    
+    // 设置所有窗口的强制邀请状态
+    void setAllForceInviteSettings(const QHash<QString, bool> &settings);
+    
+    // 获取指定窗口的扫荡任务启用状态
+    bool isSweepTaskEnabled(const QString &windowTitle) const;
+    
+    // 设置指定窗口的扫荡任务启用状态
+    void setSweepTaskEnabled(const QString &windowTitle, bool enabled);
+    
+    // 获取所有窗口的扫荡任务启用设置
+    QHash<QString, bool> getAllSweepTaskSettings() const;
+    
+    // 设置所有窗口的扫荡任务启用状态
+    void setAllSweepTaskSettings(const QHash<QString, bool> &settings);
 
 private slots:
     void onAddButtonClicked();
@@ -75,6 +100,8 @@ private:
         // 扫荡任务参数
         QSpinBox *taskIndexSpinBox;     // 任务索引
         QSpinBox *subTaskIndexSpinBox;  // 子任务索引
+        QCheckBox *sweepTaskCheckBox;   // 扫荡任务启用
+        QCheckBox *forceInviteCheckBox; // 强制邀请启用
     };
     
     QHash<QString, TabWidgets> tabWidgetsMap;
